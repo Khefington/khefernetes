@@ -1,0 +1,23 @@
+---
+
+#   First role to call should be to the hypervisor to see if provisioning a VM is possible. Generic outline would be as follows
+#   1.) Connect/Reach out to the provided hypervisor. I've heard that ProxMox is pretty good, so may investigate that
+#   2.) Provision a new VM / Range of VMs based on inventory/host files
+#   3.) Stand up/Configure the VM. Will need to spend time thinking about security but as long as I don't expose it, it should be fine.
+- name: Provison VM(s)
+  hosts: inventory
+  roles:
+    - hypervisor
+  tags: vm
+
+- name: Install RKE2
+  hosts: inventory
+  roles:
+    - rke2
+  tags: rke2
+
+- name: Install Jellyfin
+  hosts: inventory
+  roles:
+    - jellyfin
+  tags: jellyfin
