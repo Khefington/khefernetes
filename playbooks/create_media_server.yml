@@ -7,7 +7,7 @@
 - name: Provison VM(s)
   hosts: inventory
   roles:
-    - hypervisor
+    - proxmox_host
   tags: vm
 
 - name: Install RKE2

@@ -1,7 +1,0 @@
----
-# File dedicated to hosting vars associated with a local dev installation
-dev_hosts:
-  hosts:
-    dev:
-      - localhost_ansible_connection: local
-      - dev_ipv4_address: 127.0.0.1

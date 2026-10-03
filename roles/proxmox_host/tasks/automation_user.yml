@@ -1,0 +1,59 @@
+---
+- name: List existing roles
+  ansible.builtin.command: pveum role list --output-format json
+  register: pve_roles
+  changed_when: false
+
+- name: Create automation role
+  ansible.builtin.command: >-
+    pveum role add {{ proxmox_automation_role }} --privs "{{ proxmox_automation_privs | trim }}"
+  when: proxmox_automation_role not in (pve_roles.stdout | from_json | map(attribute='roleid') | list)
+
+- name: List existing users
+  ansible.builtin.command: pveum user list --output-format json
+  register: pve_users
+  changed_when: false
+
+- name: Create automation user
+  ansible.builtin.command: "pveum user add {{ proxmox_automation_user }} --comment 'Ansible automation'"
+  when: proxmox_automation_user not in (pve_users.stdout | from_json | map(attribute='userid') | list)
+
+- name: Grant the role on /
+  ansible.builtin.command: >-
+    pveum acl modify / --users {{ proxmox_automation_user }} --roles {{ proxmox_automation_role }}
+  changed_when: false
+
+- name: List existing API tokens
+  ansible.builtin.command: "pveum user token list {{ proxmox_automation_user }} --output-format json"
+  register: pve_tokens
+  changed_when: false
+
+- name: Create API token (secret is only shown once)
+  ansible.builtin.command: >-
+    pveum user token add {{ proxmox_automation_user }} {{ proxmox_automation_token_id }}
+    --privsep 0 --output-format json
+  register: new_token
+  no_log: true
+  when: proxmox_automation_token_id not in (pve_tokens.stdout | from_json | map(attribute='tokenid') | list)
+
+- name: Save new token on the host (root-only)
+  ansible.builtin.copy:
+    content: "{{ new_token.stdout }}"
+    dest: /root/.ansible-pve-token.json
+    mode: "0600"
+  no_log: true
+  when: new_token is changed
+
+- name: Fetch token to your control node
+  ansible.builtin.fetch:
+    src: /root/.ansible-pve-token.json
+    dest: "{{ proxmox_token_local_dir }}/pve-token.json"
+    flat: true
+  when: new_token is changed
+
+- name: Remind about the token
+  ansible.builtin.debug:
+    msg: >-
+      Token saved to .secrets/pve-token.json (gitignored). Copy the value into
+      group_vars/all/vault.yml as vault_proxmox_token_secret, encrypt it, then delete the file.
+  when: new_token is changed

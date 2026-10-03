@@ -1,0 +1,29 @@
+---
+proxmox_node: castellan
+proxmox_api_host: {{ proxmox_instance_ip_address }}
+
+# --- My Storage layout -------------------------------------------------------
+# local / local-lvm : 1TB SSD (Proxmox OS, templates, other Partitions)
+# vmdata            : 2TB SSD, Using as LVM-thin
+# media             : 4TB HDD (already created by hand; NOT touched here)
+
+proxmox_prepare_vm_disk: false
+proxmox_vm_disk_device: /dev/nvme1n1
+proxmox_vm_vg_name: vmdata
+proxmox_vm_thinpool_name: data
+proxmox_vm_storage_id: vmdata
+
+# --- Repositories ---------------------------------------------------------
+proxmox_remove_subscription_nag: false
+
+# --- Automation identity --------------------------------------------------
+proxmox_automation_user: ansible@pve
+proxmox_automation_role: Automation
+proxmox_automation_token_id: automation
+proxmox_automation_privs: >-
+  Datastore.Allocate Datastore.AllocateSpace Datastore.AllocateTemplate Datastore.Audit
+  Pool.Allocate Sys.Audit Sys.Console Sys.Modify SDN.Use
+  VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.Cloudinit VM.Config.CPU
+  VM.Config.Disk VM.Config.HWType VM.Config.Memory VM.Config.Network VM.Config.Options
+  VM.Migrate VM.PowerMgmt
+proxmox_token_local_dir: "{{ playbook_dir }}/.secrets"

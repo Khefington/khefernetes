@@ -1,3 +1,4 @@
+---
 - name: Automate RKE2 installation on local Linux
   hosts: rke2_servers
   become: true

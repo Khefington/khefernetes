@@ -1,0 +1,36 @@
+---
+# Creates a LVM-thin pool and registers it as Proxmox storage.
+- name: Check whether the VM volume group exists
+  ansible.builtin.command: "vgs --noheadings {{ proxmox_vm_vg_name }}"
+  register: vm_vg
+  changed_when: false
+  failed_when: false
+
+- name: Create VG, thin pool and register storage
+  when: vm_vg.rc != 0
+  block:
+    - name: Refuse to wipe a mounted device
+      ansible.builtin.command: "findmnt --source {{ proxmox_vm_disk_device }} --noheadings"
+      register: dev_mounted
+      changed_when: false
+      failed_when: dev_mounted.rc == 0
+
+    - name: Wipe signatures on the device
+      ansible.builtin.command: "wipefs --all {{ proxmox_vm_disk_device }}"
+
+    - name: Create physical volume
+      ansible.builtin.command: "pvcreate {{ proxmox_vm_disk_device }}"
+
+    - name: Create volume group
+      ansible.builtin.command: "vgcreate {{ proxmox_vm_vg_name }} {{ proxmox_vm_disk_device }}"
+
+    - name: Create thin pool (95% of the VG, leaving room for metadata)
+      ansible.builtin.command: >-
+        lvcreate -l 95%FREE --thinpool {{ proxmox_vm_thinpool_name }} {{ proxmox_vm_vg_name }}
+
+    - name: Register as Proxmox storage
+      ansible.builtin.command: >-
+        pvesm add lvmthin {{ proxmox_vm_storage_id }}
+        --vgname {{ proxmox_vm_vg_name }}
+        --thinpool {{ proxmox_vm_thinpool_name }}
+        --content images,rootdir

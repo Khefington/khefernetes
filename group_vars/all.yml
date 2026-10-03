@@ -1,0 +1,15 @@
+---
+lan_subnet_cidr_prefix: 24
+lan_gateway: 192.168.1.1
+lan_dns_servers:
+  - 192.168.1.1
+  - 8.8.8.8 # Just use google dummy
+lan_domain: home.lan
+
+# Reserved for MetalLB later
+metallb_range: 192.168.1.200-192.168.1.220
+
+# Version-lock for RKE2
+rke2_version: "v1.33.5+rke2r1"
+# Version-lock for Ubuntu
+ubuntu_release: noble

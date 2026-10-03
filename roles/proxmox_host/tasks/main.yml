@@ -1,0 +1,13 @@
+---
+- name: Repositories and updates
+  ansible.builtin.import_tasks: repos.yml
+  tags: [repos]
+
+- name: VM storage
+  ansible.builtin.import_tasks: storage.yml
+  tags: [storage]
+  when: proxmox_prepare_vm_disk | bool
+
+# - name: Automation user and API token
+#   ansible.builtin.import_tasks: automation_user.yml
+#   tags: [automation]
