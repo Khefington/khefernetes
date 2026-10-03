@@ -10,20 +10,20 @@
     - proxmox_host
   tags: proxmox
 
-- name: Provison VM(s)
-  hosts: castellan
-  roles:
-    - proxmox_host
-  tags: vm
+# - name: Provison VM(s)
+#   hosts: castellan
+#   roles:
+#     - proxmox_host
+#   tags: vm
 
-- name: Install RKE2
-  hosts: rke2_servers
-  roles:
-    - rke2
-  tags: rke2
+# - name: Install RKE2
+#   hosts: rke2_servers
+#   roles:
+#     - rke2
+#   tags: rke2
 
-- name: Install Jellyfin
-  hosts: rke2_servers
-  roles:
-    - jellyfin
-  tags: jellyfin
+# - name: Install Jellyfin
+#   hosts: rke2_servers
+#   roles:
+#     - jellyfin
+#   tags: jellyfin

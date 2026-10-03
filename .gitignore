@@ -1,6 +1,6 @@
 .vault_pass
 .secrets/
-group_vars/all/vault.yml
+inventories/cluster/group_vars/all/vault.yml
 *.retry
 .venv/
 kubeconfig*
