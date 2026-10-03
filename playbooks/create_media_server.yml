@@ -4,20 +4,26 @@
 #   1.) Connect/Reach out to the provided hypervisor. I've heard that ProxMox is pretty good, so may investigate that
 #   2.) Provision a new VM / Range of VMs based on inventory/host files
 #   3.) Stand up/Configure the VM. Will need to spend time thinking about security but as long as I don't expose it, it should be fine.
+- name: Configure Proxmox
+  hosts: castellan
+  roles:
+    - proxmox_host
+  tags: proxmox
+
 - name: Provison VM(s)
-  hosts: inventory
+  hosts: castellan
   roles:
     - proxmox_host
   tags: vm
 
 - name: Install RKE2
-  hosts: inventory
+  hosts: rke2_servers
   roles:
     - rke2
   tags: rke2
 
 - name: Install Jellyfin
-  hosts: inventory
+  hosts: rke2_servers
   roles:
     - jellyfin
   tags: jellyfin

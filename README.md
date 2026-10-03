@@ -14,23 +14,11 @@ requests
   - name: ansible.posix
   - name: kubernetes.core
 
-
-# Install
-
-## Setup
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-ansible-galaxy install -r requirements.yml
-ssh-keygen -t ed25519 -f ~/.ssh/homelab          # skip if you have a key
-ssh-copy-id -i ~/.ssh/homelab.pub root@192.168.1.50
-ansible proxmox -m ping
-```
 ## Repository Layout
 
 | Path | Purpose |
 |---|---|
-| `inventory/hosts.yml` | Proxmox host and the planned VMs |
+| `inventories/cluster/hosts.yml` | Proxmox host and the planned VMs |
 | `group_vars/` | Network, storage and version settings |
 | `roles/proxmox_host/` | Repos, updates, 2TB SSD LVM-thin pool, API token |
 | `playbooks` | Primary high level orchestration |

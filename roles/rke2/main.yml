@@ -1,34 +1,34 @@
 ---
-- name: Automate RKE2 installation on local Linux
-  hosts: rke2_servers
-  become: true
-  tasks:
-    - name: Ensure system packages are up to date
-      ansible.builtin.apt:
-        update_cache: true
-        upgrade: dist
+# - name: Automate RKE2 installation on local Linux
+#   hosts: rke2_servers
+#   become: true
+#   tasks:
+#     - name: Ensure system packages are up to date
+#       ansible.builtin.apt:
+#         update_cache: true
+#         upgrade: dist
 
-    - name: Download RKE2 installation script securely
-      ansible.builtin.get_url:
-        url: https://rke2.io
-        dest: /tmp/install_rke2.sh
-        mode: "0755"
+#     - name: Download RKE2 installation script securely
+#       ansible.builtin.get_url:
+#         url: https://rke2.io
+#         dest: /tmp/install_rke2.sh
+#         mode: "0755"
 
-    - name: Check if RKE2 binary is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/rke2
-      register: rke2_binary
+#     - name: Check if RKE2 binary is already installed
+#       ansible.builtin.stat:
+#         path: /usr/local/bin/rke2
+#       register: rke2_binary
 
-    - name: Run RKE2 installer script if not present
-      ansible.builtin.command: /tmp/install_rke2.sh
-      environment:
-        INSTALL_RKE2_TYPE: "server"
-      register: installer_output
-      changed_when: installer_output.rc == 0
-      when: not rke2_binary.stat.exists
+#     - name: Run RKE2 installer script if not present
+#       ansible.builtin.command: /tmp/install_rke2.sh
+#       environment:
+#         INSTALL_RKE2_TYPE: "server"
+#       register: installer_output
+#       changed_when: installer_output.rc == 0
+#       when: not rke2_binary.stat.exists
 
-    - name: Start and enable the RKE2 server systemd daemon
-      ansible.builtin.systemd_service:
-        name: rke2-server
-        state: started
-        enabled: true
+#     - name: Start and enable the RKE2 server systemd daemon
+#       ansible.builtin.systemd_service:
+#         name: rke2-server
+#         state: started
+#         enabled: true

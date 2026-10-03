@@ -1,6 +1,6 @@
 ---
 proxmox_node: castellan
-proxmox_api_host: {{ proxmox_instance_ip_address }}
+proxmox_api_host: "{{ proxmox_instance_ip_address }}"
 
 # --- My Storage layout -------------------------------------------------------
 # local / local-lvm : 1TB SSD (Proxmox OS, templates, other Partitions)
