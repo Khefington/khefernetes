@@ -1,0 +1,33 @@
+---
+# VM definitions
+# "anvil" is just what I am calling the cluster itself. Nerd alert, naming convention stems from IG
+# roles and ranks. From what I gather "hammer & anvil," is a common military strat. Two forces
+# cooperate to achieve something. The anvil holds things down and is stationary while the hammer
+# comes in to deal a blow. The basilisk and wyvern are artillary to hold units in place while the
+# kasrkin are infantry to come in to strike. It's lame but I think it just gives everything a
+# a little personality. Oh and a castellan is just an officer, thus the orchetrator of sub-units.
+
+# Servers 
+anvil_control_planes:
+  hosts:
+    kasrkin:
+      ansible_host: 192.168.1.51
+      vm_id: 201
+anvil_workers:
+  hosts:
+    wyvern:
+      ansible_host: 192.168.1.52
+      vm_id: 202
+    basilisk:
+      ansible_host: 192.168.1.53
+      vm_id: 203
+anvil_cluster:
+  children:
+    anvil_control_planes:
+    anvil_workers:
+  vars:
+    ansible_user: ansible
+    vm_cores: 4
+    vm_memory_mb: 8192
+    vm_disk_gb: 100
+    ansible_become: true

@@ -1,13 +1,8 @@
 ---
-proxmox_node: castellan
-proxmox_api_host: "{{ proxmox_instance_ip_address }}"
-ansible_become_password: "{{ vault_ansible_become_password }}"
-
 # --- My Storage layout -------------------------------------------------------
 # local / local-lvm : 1TB SSD (Proxmox OS, templates, other Partitions)
 # vmdata            : 2TB SSD, Using as LVM-thin
 # media             : 4TB HDD (already created by hand; NOT touched here)
-
 proxmox_prepare_vm_disk: false
 proxmox_vm_disk_device: /dev/nvme1n1
 proxmox_vm_vg_name: vmdata
