@@ -1,0 +1,65 @@
+---
+- name: Configure Proxmox
+  hosts: proxmox
+  vars:
+    ansible_user: root # play vars outrank the inventory's ansible_user
+    ansible_become: false # root needs no sudo
+    proxmox_debian_suite: bookworm
+  tasks:
+    # -------------------------- Remove Repos --------------------------
+    - name: Remove paid (enterprise) repositories
+      ansible.builtin.file:
+        path: "/etc/apt/sources.list.d/{{ item }}"
+        state: absent
+      loop:
+        - pve-enterprise.list
+        - ceph.list
+
+    - name: Add the free Proxmox repository
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/pve-no-subscription.list
+        content: |
+          deb http://download.proxmox.com/debian/pve {{ proxmox_debian_suite }} pve-no-subscription
+        mode: "0644"
+
+    - name: Install sudo onto prox
+      ansible.builtin.apt:
+        name: sudo
+        state: present
+        update_cache: true
+
+    - name: Create Ansible user
+      ansible.builtin.user:
+        name: ansible
+        shell: /bin/bash
+        create_home: true # without this there is no ~/.ssh to hold your key
+        password_lock: true # no password login; the SSH key is the only way in
+
+    - name: Authorize your SSH key
+      ansible.posix.authorized_key:
+        user: ansible
+        key: "{{ lookup('ansible.builtin.file', '{{ ansible_ssh_key_dir }}') }}" # adjust to your key's path
+        state: present
+
+    - name: Allow passwordless sudo for the automation user
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/ansible
+        content: "ansible ALL=(ALL) NOPASSWD:ALL\n"
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Install debug tools
+      ansible.builtin.apt:
+        name: [smartmontools, nvme-cli, htop, ethtool, vim]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Set the host timezone
+      community.general.timezone:
+        name: America/Chicago
+
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+      tags: [upgrade]

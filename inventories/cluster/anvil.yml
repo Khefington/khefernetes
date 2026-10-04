@@ -14,7 +14,9 @@ anvil_control_planes:
     kasrkin:
       # host variables | overwritten by a host_vars/kasrkin.yml, or higher
       ansible_host: 192.168.1.51
+      inventory_hostname: kasrkin
       vm_id: 201
+      vm_memory_mb: 4096
 # group definition
 # RKE2 Worker Node(s)
 anvil_workers:
@@ -22,10 +24,12 @@ anvil_workers:
     wyvern:
       # host variables | overwritten by a host_vars/wyvern.yml, or higher
       ansible_host: 192.168.1.52
+      inventory_hostname: wyvern
       vm_id: 202
     basilisk:
       # host variables | overwritten by a host_vars/basilisk.yml, or higher
       ansible_host: 192.168.1.53
+      inventory_hostname: basilisk
       vm_id: 203
 # group definition
 anvil_cluster:

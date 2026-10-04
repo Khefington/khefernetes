@@ -1,0 +1,5 @@
+# Managed by Ansible (role rke2). Manual edits will be overwritten.
+node-name: {{ inventory_hostname }}
+node-ip: {{ ansible_host }}
+server: https://{{ rke2_server_host }}:{{ rke2_supervisor_port }}
+token: {{ rke2_token }}

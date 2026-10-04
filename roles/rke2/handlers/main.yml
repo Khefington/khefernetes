@@ -1,0 +1,9 @@
+---
+# 'restarted' also starts a stopped service, which is why this works on first install.
+# On a live control plane this briefly interrupts the API: acceptable here, one node at a time
+# (the playbook uses serial: 1 for servers).
+- name: Restart rke2
+  ansible.builtin.systemd:
+    name: "rke2-{{ rke2_type }}"
+    state: restarted
+    daemon_reload: true

@@ -1,0 +1,9 @@
+# Managed by Ansible (role rke2). Manual edits will be overwritten.
+node-name: {{ inventory_hostname }}
+node-ip: {{ ansible_host }}
+token: {{ rke2_token }}
+cni: canal
+tls-san:
+{% for san in rke2_tls_sans %}
+  - {{ san }}
+{% endfor %}

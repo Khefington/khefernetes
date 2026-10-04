@@ -1,0 +1,120 @@
+---
+# Clone the cloud-init template (VM 9000) into one VM per host in anvil_cluster.
+# Run from the repo root with the venv active:
+#   ansible-playbook playbooks/cluster/create_vms.yml --check   (will skip API writes)
+#   ansible-playbook playbooks/cluster/create_vms.yml
+#
+# Per-host values come from the inventory: vm_id, ansible_host, vm_cores,
+# vm_memory_mb, vm_disk_gb. Override any of them in host_vars/<host>.yml.
+
+# ---- Play 1: talk to the Proxmox API (nothing connects to the VMs yet) ----------
+- name: Create the cluster VMs from the template
+  hosts: anvil_cluster
+  gather_facts: false
+  connection: local # these VMs do not exist yet, so do not SSH to them
+  serial: 1 # one at a time: simpler, and gentle on the disk
+  vars:
+    ansible_become: false # play vars beat the group's ansible_become: true
+    ansible_python_interpreter: "{{ ansible_playbook_python }}" # venv python (proxmoxer)
+    vm_storage: local-lvm
+    ssh_public_key_file: "{{ ansible_ssh_key_dir }}"
+    # API credentials live in group_vars/proxmox, which these hosts are not in,
+    # so read them from the castellan host's variables.
+    pve: "{{ hostvars['castellan'] }}"
+  module_defaults:
+    community.proxmox.proxmox_kvm:
+      node: "{{ proxmox_node }}"
+    community.proxmox.proxmox_vm_info:
+      node: "{{ proxmox_node }}"
+
+  tasks:
+    - name: Look up whether this VM already exists
+      community.proxmox.proxmox_vm_info:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: false # Proxmox ships a self-signed certificate
+        vmid: "{{ vm_id }}"
+      register: existing_vm
+
+    - name: Clone the template (full clone onto local-lvm)
+      community.proxmox.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: false # Proxmox ships a self-signed certificate
+        clone: "{{ template_name }}"
+        vmid: "{{ template_vmid }}"
+        newid: "{{ vm_id }}"
+        name: "{{ inventory_hostname }}"
+        full: true
+        storage: "{{ vm_storage }}"
+        timeout: 600
+      when: existing_vm.proxmox_vms | length == 0
+
+    - name: Set CPU, memory and cloud-init (user, key, static IP, DNS)
+      community.proxmox.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: false # Proxmox ships a self-signed certificate
+        vmid: "{{ vm_id }}"
+        update: true
+        cores: "{{ vm_cores }}"
+        memory: "{{ vm_memory_mb }}"
+        ciuser: ansible
+        sshkeys: "{{ lookup('ansible.builtin.file', ssh_public_key_file) }}"
+        ipconfig:
+          ipconfig0: "ip={{ ansible_host }}/{{ lan_subnet_cidr_prefix }},gw={{ lan_gateway }}"
+        nameservers: "{{ lan_dns_servers }}"
+        searchdomains: ["{{ lan_domain }}"]
+        onboot: true
+        tags: [rke2, "{{ 'control-plane' if inventory_hostname in groups['anvil_control_planes'] else 'worker' }}"]
+
+    - name: Grow the system disk to the size set in the inventory
+      community.proxmox.proxmox_disk:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: false # Proxmox ships a self-signed certificate
+        vmid: "{{ vm_id }}"
+        disk: scsi0
+        size: "{{ vm_disk_gb }}G"
+        state: resized
+
+    - name: Start the VM
+      community.proxmox.proxmox_kvm:
+        api_host: "{{ proxmox_api_host }}"
+        api_user: "{{ proxmox_api_user }}"
+        api_token_id: "{{ proxmox_api_token_id }}"
+        api_token_secret: "{{ proxmox_api_token_secret }}"
+        validate_certs: false # Proxmox ships a self-signed certificate
+        vmid: "{{ vm_id }}"
+        state: started
+
+# ---- Play 2: wait for the guests, over normal SSH -------------------------------
+- name: Wait for the VMs to finish first boot
+  hosts: anvil_cluster
+  gather_facts: false
+  tasks:
+    - name: Wait until SSH answers as the ansible user
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    - name: Report any degraded state other than the known 'user' deprecation
+      ansible.builtin.debug:
+        msg: "cloud-init finished degraded: {{ cloud_init.stdout_lines }}"
+      when:
+        - cloud_init.rc == 2
+        - "'users' list instead' not in cloud_init.stdout"
+
+    - name: Check that the hostname matches the inventory name
+      ansible.builtin.command: hostname
+      register: guest_hostname
+      changed_when: false
+      failed_when: guest_hostname.stdout != inventory_hostname
