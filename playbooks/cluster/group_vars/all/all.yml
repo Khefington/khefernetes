@@ -1,0 +1,3 @@
+---
+# Playbook group_vars/all | Overwritten next by inventory group_vars/*
+cluster_precedence: "playbook/group_vars/all"

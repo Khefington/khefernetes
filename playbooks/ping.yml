@@ -1,0 +1,7 @@
+---
+- name: Attempt to ping a host
+  hosts: castellan
+  tasks:
+    - name: Ping instance
+      ansible.builtin.ping:
+        data: pong

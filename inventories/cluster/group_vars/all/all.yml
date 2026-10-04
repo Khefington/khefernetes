@@ -9,7 +9,7 @@ lan_domain: home.lan
 
 # --PROXMOX--
 proxmox_node: castellan
-proxmox_api_host: "{{ proxmox_instance_ip_address }}"
+proxmox_api_host: "{{ vault_proxmox_instance_ip_address }}"
 ansible_become_password: "{{ vault_ansible_become_password }}"
 
 # Reserved for MetalLB later
@@ -19,3 +19,6 @@ metallb_range: 192.168.1.200-192.168.1.220
 rke2_version: "v1.33.5+rke2r1"
 # Version-lock for Ubuntu
 ubuntu_release: noble
+
+# Overritten by playbook group_vars/all
+cluster_precedence: "inventory group_vars/all"
