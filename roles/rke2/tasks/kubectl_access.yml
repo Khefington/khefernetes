@@ -1,0 +1,45 @@
+---
+# Control plane only. Setup 'K' alias
+
+- name: Put RKE2's bundled kubectl on the PATH (always the exact cluster version)
+  ansible.builtin.file:
+    src: /var/lib/rancher/rke2/bin/kubectl
+    dest: /usr/local/bin/kubectl
+    state: link
+
+- name: Create ~/.kube for {{ rke2_kubectl_user }}
+  ansible.builtin.file:
+    path: "/home/{{ rke2_kubectl_user }}/.kube"
+    state: directory
+    owner: "{{ rke2_kubectl_user }}"
+    group: "{{ rke2_kubectl_user }}"
+    mode: "0700"
+
+# Copy config to this this node.
+- name: Copy the admin kubeconfig to ~/.kube/config
+  ansible.builtin.copy:
+    src: "{{ rke2_config_dir }}/rke2.yaml"
+    dest: "/home/{{ rke2_kubectl_user }}/.kube/config"
+    remote_src: true
+    owner: "{{ rke2_kubectl_user }}"
+    group: "{{ rke2_kubectl_user }}"
+    mode: "0600"
+  diff: false # contains credentials
+
+- name: Install bash-completion (kubectl's completion script needs it)
+  ansible.builtin.apt:
+    name: bash-completion
+    state: present
+
+- name: Add the k alias and tab completion
+  ansible.builtin.blockinfile:
+    path: "/home/{{ rke2_kubectl_user }}/.bash_aliases"
+    create: true
+    owner: "{{ rke2_kubectl_user }}"
+    group: "{{ rke2_kubectl_user }}"
+    mode: "0644"
+    marker: "# {mark} ANSIBLE MANAGED: kubectl"
+    block: |
+      alias k=kubectl
+      source <(kubectl completion bash)
+      complete -o default -F __start_kubectl k

@@ -1,20 +1,16 @@
 ---
-# Role defaults: lowest precedence, so anything in group_vars/host_vars overrides them.
-# rke2_version is NOT set here on purpose; it lives in group_vars/all/all.yml.
-
 # server or agent, decided by which inventory group the host is in
 rke2_type: "{{ 'server' if inventory_hostname in groups['anvil_control_planes'] else 'agent' }}"
 
-# Shared secret that lets nodes join. Pre-set (from the vault) instead of read back from
-# the first server, so a rebuild from Git produces a cluster with a known token.
+# Shared secret that lets nodes join
 rke2_token: "{{ vault_rke2_token }}"
 
-# Where agents (and extra servers) register: the supervisor port on the first control plane.
+# Cluster Registration
 rke2_server_host: "{{ hostvars[groups['anvil_control_planes'][0]].ansible_host }}"
 rke2_supervisor_port: 9345
 rke2_api_port: 6443
 
-# Names/IPs the API server certificate must be valid for.
+# Names/IPs the API server certificate
 rke2_tls_sans:
   - "{{ ansible_host }}"
   - "{{ inventory_hostname }}"
@@ -22,3 +18,6 @@ rke2_tls_sans:
 
 rke2_install_script_url: https://get.rke2.io
 rke2_config_dir: /etc/rancher/rke2
+
+# User for RKE2 cluster
+rke2_kubectl_user: "{{ ansible_user }}"
