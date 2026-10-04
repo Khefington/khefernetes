@@ -1,0 +1,84 @@
+---
+# Included once per export by nfs_media.yml. Variables: export (dict), export_idx.
+- name: "Test {{ export.path }}"
+  vars:
+    test_mount: "/mnt/nfs-test-{{ export_idx }}"
+    test_file: "{{ test_mount }}/.write-test-{{ inventory_hostname }}"
+    nfs_server_ip: "{{ hostvars['castellan'].ansible_host }}"
+  block:
+    - name: Mount the share temporarily (not added to /etc/fstab)
+      ansible.posix.mount:
+        path: "{{ test_mount }}"
+        src: "{{ nfs_server_ip }}:{{ export.path }}"
+        fstype: nfs
+        opts: rw,nfsvers=4.2
+        state: ephemeral
+
+    - name: Create a test file as root on this VM
+      ansible.builtin.file:
+        path: "{{ test_file }}"
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Look at who owns it on the share
+      ansible.builtin.stat:
+        path: "{{ test_file }}"
+      register: test_stat
+
+    - name: Check that root was squashed to the media user
+      ansible.builtin.assert:
+        that:
+          - test_stat.stat.uid == media_uid
+          - test_stat.stat.gid == media_gid
+        success_msg: "{{ inventory_hostname }} {{ export.path }}: writable, files land as media ({{ media_uid }})"
+        fail_msg: "File is owned by {{ test_stat.stat.uid }}, expected {{ media_uid }}: check the export options"
+
+    # The reason downloads/ and media/ share one export: a hardlink must stay inside one mount.
+    - name: Hardlink test (downloads/ -> media/)
+      when: export.hardlink_test | default(false)
+      block:
+        - name: Create a file in downloads
+          ansible.builtin.file:
+            path: "{{ test_mount }}/downloads/.hl-{{ inventory_hostname }}"
+            state: touch
+            modification_time: preserve
+            access_time: preserve
+
+        - name: Hardlink it into media
+          ansible.builtin.file:
+            src: "{{ test_mount }}/downloads/.hl-{{ inventory_hostname }}"
+            dest: "{{ test_mount }}/media/.hl-{{ inventory_hostname }}"
+            state: hard
+
+        - name: Compare the two names
+          ansible.builtin.stat:
+            path: "{{ item }}"
+          loop:
+            - "{{ test_mount }}/downloads/.hl-{{ inventory_hostname }}"
+            - "{{ test_mount }}/media/.hl-{{ inventory_hostname }}"
+          register: hl_stats
+
+        - name: Check both names point at the same file
+          ansible.builtin.assert:
+            that:
+              - hl_stats.results[0].stat.inode == hl_stats.results[1].stat.inode
+              - hl_stats.results[0].stat.nlink == 2
+            success_msg: "{{ inventory_hostname }}: hardlink OK (one copy, two names)"
+            fail_msg: "Hardlink failed. Seeding would store every file twice."
+
+  always:
+    - name: Remove test files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ test_file }}"
+        - "{{ test_mount }}/downloads/.hl-{{ inventory_hostname }}"
+        - "{{ test_mount }}/media/.hl-{{ inventory_hostname }}"
+      ignore_errors: true
+
+    - name: Unmount the test share
+      ansible.posix.mount:
+        path: "{{ test_mount }}"
+        state: unmounted

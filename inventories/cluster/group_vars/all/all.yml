@@ -24,3 +24,5 @@ ubuntu_release: noble
 cluster_precedence: "inventory group_vars/all"
 
 ansible_ssh_key_dir: "~/.ssh/id_ed25519.pub"
+media_uid: 1500 # the 'media' user/group that owns every library file
+media_gid: 1500

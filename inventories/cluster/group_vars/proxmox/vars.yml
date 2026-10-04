@@ -40,3 +40,16 @@ api_token_id: "{{ proxmox_api_token_id }}"
 api_token_secret: "{{ proxmox_api_token_secret }}"
 validate_certs: false
 node: "{{ proxmox_node }}"
+
+# ===== Replace the old 2TB 'vmdata' / proxmox_prepare_vm_disk block with this =====
+# --- 2TB SSD: staging for in-progress downloads (plain ext4, mounted on castellan) ---
+staging_disk_device: /dev/nvme1n1 # CHECK with: lsblk -f   (must be the empty 2TB disk)
+staging_disk_prepare: false # safety switch: formatting only happens with -e staging_disk_prepare=true
+staging_mount_path: /mnt/staging
+staging_label: staging
+
+# --- Sharing over NFS (HDD data tree + SSD staging) ---
+media_hdd_storage_id: castellan-hdd1 # the Proxmox storage ID of the 4TB HDD
+data_export_subdir: data # <hdd>/data holds media/ and downloads/ (one export => hardlinks work)
+media_uid: 1500 # the 'media' user/group that owns every library file
+media_gid: 1500
