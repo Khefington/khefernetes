@@ -53,3 +53,9 @@ media_hdd_storage_id: castellan-hdd1 # the Proxmox storage ID of the 4TB HDD
 data_export_subdir: data # <hdd>/data holds media/ and downloads/ (one export => hardlinks work)
 media_uid: 1500 # the 'media' user/group that owns every library file
 media_gid: 1500
+
+# --- Importing media from the Windows PC (used by playbooks/storage/import_media.yml) ---
+media_transfers:
+  - { src: "/mnt/c/Users/konno/Videos/Movies", dest: "media/movies" }
+  - { src: "/mnt/c/Users/konno/Videos/TV", dest: "media/tv" }
+  # - { src: "/mnt/d/Music/",                       dest: "media/music" }

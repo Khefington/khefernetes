@@ -1,0 +1,87 @@
+---
+# Deploy Jellyfin into the 'media' namespace (needs install_storage.yml to have run).
+#   ansible-playbook playbooks/cluster/install_jellyfin.yml
+#
+# Applications are applied with 'kubectl apply' so any error shows up here in the playbook.
+# (Cluster add-ons like storage use RKE2's auto-apply manifest folder instead.)
+- name: Deploy Jellyfin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  vars:
+    kubectl: /var/lib/rancher/rke2/bin/kubectl
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+    manifest_dir: /etc/khefernetes/manifests
+
+    jellyfin_version: "10.11.11" # pinned; image tags follow Jellyfin's release numbers
+    jellyfin_hostname: "jellyfin.{{ lan_domain }}"
+    jellyfin_ingress_class: "{{ ingress_class_name | default('nginx') }}"
+    jellyfin_config_size: 20Gi # users, watch history, metadata, trickplay images
+    jellyfin_cache_limit: 20Gi # transcoding scratch space on the node's disk
+    timezone: America/Chicago
+  tasks:
+    - name: Create the manifest folder
+      ansible.builtin.file:
+        path: "{{ manifest_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the Jellyfin manifest
+      ansible.builtin.template:
+        src: jellyfin.yaml.j2
+        dest: "{{ manifest_dir }}/jellyfin.yaml"
+        mode: "0644"
+
+    - name: Apply and wait for the rollout
+      block:
+        - name: Kubectl apply
+          ansible.builtin.command: "{{ kubectl }} --kubeconfig {{ kubeconfig }} apply -f {{ manifest_dir }}/jellyfin.yaml"
+          register: apply_out
+          changed_when: apply_out.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+        - name: Wait for Jellyfin to become ready (first start pulls the image; allow time)
+          ansible.builtin.command: >-
+            {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media
+            rollout status deployment/jellyfin --timeout=600s
+          changed_when: false
+          check_mode: false
+
+      rescue:
+        - name: Collect what Kubernetes says went wrong
+          ansible.builtin.shell: |
+            {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media get pods,pvc -o wide
+            echo ---- EVENTS ----
+            {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media get events --sort-by=.lastTimestamp | tail -15
+          register: diag
+          changed_when: false
+          failed_when: false
+
+        - name: Show it
+          ansible.builtin.debug:
+            var: diag.stdout_lines
+
+        - name: Stop
+          ansible.builtin.fail:
+            msg: >-
+              Jellyfin did not become ready. The output above usually names the cause:
+              ImagePullBackOff means the image tag is wrong or unreachable (check jellyfin_version);
+              Pending with a volume message points at the storage claims.
+
+    - name: Check the health endpoint through the ingress, from another node
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[groups['anvil_workers'][0]].ansible_host }}/health"
+        headers:
+          Host: "{{ jellyfin_hostname }}"
+        return_content: true
+      register: health
+      retries: 12
+      delay: 5
+      until: health.status == 200
+      changed_when: false
+      check_mode: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg:
+          - "Jellyfin answered: {{ health.content }}"
+          - "Open http://{{ hostvars[groups['anvil_workers'][0]].ansible_host }} in a browser to finish setup."
+          - "Add the media libraries at /media/movies, /media/tv and /media/music."

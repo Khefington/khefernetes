@@ -1,0 +1,78 @@
+---
+# Bring the storage into Kubernetes:
+#   - a 'media' namespace with PersistentVolumes/Claims for the NFS shares (data + incomplete)
+#   - the local-path provisioner, a StorageClass for node-local volumes (Jellyfin's config)
+
+# ---- Play 1: ask Proxmox where the shares are ------------
+- name: Work out the NFS export paths
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Ask Proxmox where the storage lives for device - '{{ media_hdd_storage_id }}'
+      ansible.builtin.command: pvesh get /storage/{{ media_hdd_storage_id }} --output-format json
+      register: storage_cfg
+      changed_when: false
+      check_mode: false
+
+    - name: Remember the paths
+      ansible.builtin.set_fact:
+        data_export_path: "{{ (storage_cfg.stdout | from_json).path }}/{{ data_export_subdir }}"
+        staging_export_path: "{{ staging_mount_path }}/incomplete"
+
+# ---- Play 2: put the manifests on the control plane -------------------------------
+- name: Storage manifests on the control plane
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  vars:
+    manifests_dir: /var/lib/rancher/rke2/server/manifests
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+    kubectl: /var/lib/rancher/rke2/bin/kubectl
+    # Pinned: bump deliberately and re-check the checksum when you want a newer release.
+    local_path_version: v0.0.37
+    local_path_sha256: 9781b39c24f3f651bd6d6e41b561e04e4904bbdb6d4f8c7a6009df3a702dcd65
+    nfs_server_ip: "{{ hostvars['castellan'].ansible_host }}"
+    data_export_path: "{{ hostvars['castellan'].data_export_path }}"
+    staging_export_path: "{{ hostvars['castellan'].staging_export_path }}"
+  tasks:
+    - name: Download the local-path provisioner manifest (pinned version, checksum verified)
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/{{ local_path_version }}/deploy/local-path-storage.yaml"
+        dest: "{{ manifests_dir }}/local-path-storage.yaml"
+        checksum: "sha256:{{ local_path_sha256 }}"
+        mode: "0644"
+
+    - name: Write the media namespace, volumes and claims
+      ansible.builtin.template:
+        src: media-storage.yaml.j2
+        dest: "{{ manifests_dir }}/media-storage.yaml"
+        mode: "0644"
+
+    - name: Wait until both media claims are Bound
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }}
+        get pvc -n media -o jsonpath={.items[*].status.phase}
+      register: pvc_phases
+      changed_when: false
+      check_mode: false
+      retries: 18
+      delay: 10
+      until: pvc_phases.stdout.split() | length == 2 and pvc_phases.stdout.split() | unique == ['Bound']
+
+    - name: Wait until the local-path provisioner is running
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }}
+        -n local-path-storage rollout status deployment/local-path-provisioner --timeout=120s
+      changed_when: false
+      check_mode: false
+
+    - name: Show what exists now
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }}
+        get storageclass,pv,pvc -A
+      register: result
+      changed_when: false
+      check_mode: false
+
+    - name: Print it
+      ansible.builtin.debug:
+        var: result.stdout_lines

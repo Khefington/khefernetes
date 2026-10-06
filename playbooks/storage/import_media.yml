@@ -1,0 +1,150 @@
+---
+# Copy media from the Windows PC (via WSL) onto storage
+# Full verification that all content transfered by checksum
+#        ansible-playbook playbooks/storage/import_media.yml --tags verify
+#
+#
+# Needs: rsync in WSL (sudo apt install rsync), and the NFS playbook already run (folders + 'media' user).
+- name: Import media from the Windows PC
+  hosts: proxmox
+  vars:
+    # Windows leftovers that should never reach the library
+    transfer_excludes:
+      - Thumbs.db
+      - desktop.ini
+      - "$RECYCLE.BIN"
+      - System?Volume?Information
+      - "*.tmp"
+  tasks:
+    - name: Make sure transfers are defined
+      ansible.builtin.assert:
+        that:
+          - media_transfers is defined
+          - media_transfers | length > 0
+          - media_transfers | selectattr('src', 'search', 'CHANGE_ME') | list | length == 0
+        fail_msg: "Set media_transfers in group_vars/proxmox/vars.yml (see vars_snippet.yml); replace every CHANGE_ME."
+
+    - name: Make sure rsync exists in WSL
+      ansible.builtin.command: which rsync
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      check_mode: false
+
+    - name: Check every source folder exists in WSL
+      ansible.builtin.stat:
+        path: "{{ item.src }}"
+      delegate_to: localhost
+      become: false
+      loop: "{{ media_transfers }}"
+      register: src_stats
+
+    - name: Stop if a source is missing or not a folder
+      ansible.builtin.assert:
+        that: item.stat.exists and item.stat.isdir
+        fail_msg: "{{ item.item.src }} is missing or not a folder. Windows drive C: is /mnt/c in WSL."
+      loop: "{{ src_stats.results }}"
+      loop_control:
+        label: "{{ item.item.src }}"
+
+    - name: Ask Proxmox where the storage '{{ media_hdd_storage_id }}' lives
+      ansible.builtin.command: pvesh get /storage/{{ media_hdd_storage_id }} --output-format json
+      register: storage_cfg
+      changed_when: false
+      check_mode: false
+
+    - name: Work out the destination base
+      ansible.builtin.set_fact:
+        hdd_path: "{{ (storage_cfg.stdout | from_json).path }}"
+        data_path: "{{ (storage_cfg.stdout | from_json).path }}/{{ data_export_subdir }}"
+
+    # If the HDD were not mounted, this would fill the 1TB SSD instead.
+    - name: Make sure the HDD is really mounted
+      ansible.builtin.command: mountpoint -q {{ hdd_path }}
+      changed_when: false
+      check_mode: false
+
+    - name: Show free space on the HDD
+      ansible.builtin.command: df -h --output=avail,pcent {{ hdd_path }}
+      register: df_out
+      changed_when: false
+      check_mode: false
+
+    - name: Free space
+      ansible.builtin.debug:
+        var: df_out.stdout_lines
+
+    - name: Install rsync on castellan
+      ansible.builtin.apt:
+        name: rsync
+        state: present
+
+    - name: Make sure the destination folders exist
+      ansible.builtin.file:
+        path: "{{ data_path }}/{{ item.dest }}"
+        state: directory
+        owner: "{{ media_uid }}"
+        group: "{{ media_gid }}"
+        mode: "2775"
+      loop: "{{ media_transfers }}"
+      loop_control:
+        label: "{{ item.dest }}"
+
+    - name: Copy
+      ansible.posix.synchronize:
+        src: "{{ item.src }}"
+        dest: "{{ data_path }}/{{ item.dest }}/"
+        archive: false
+        recursive: true
+        times: true
+        perms: true
+        owner: true
+        group: true
+        links: false
+        partial: true # keep half-copied files so an interrupted copy resumes
+        use_ssh_args: true
+        rsync_opts: >-
+          {{ ['--itemize-changes', '--human-readable', '--chown=' ~ media_uid ~ ':' ~ media_gid,
+              '--chmod=D2775,F664'] + (transfer_excludes | map('regex_replace', '^(.*)$', '--exclude=\1') | list) }}
+      become: true
+      register: copy_result
+      loop: "{{ media_transfers }}"
+      loop_control:
+        label: "{{ item.src }} -> {{ item.dest }}"
+
+    - name: What was transferred
+      ansible.builtin.debug:
+        msg: "{{ item.item.dest }}: {{ item.stdout_lines | default([]) | select('match', '^[<>c]f') | list | length }} file(s) copied or updated"
+      loop: "{{ copy_result.results }}"
+      loop_control:
+        label: "{{ item.item.dest }}"
+
+    # ---- Optional: only runs with --tags verify -------------------------------------
+    - name: Verify by checksum (dry run; any listed file differs)
+      ansible.posix.synchronize:
+        src: "{{ item.src }}"
+        dest: "{{ data_path }}/{{ item.dest }}/"
+        archive: false
+        recursive: true
+        checksum: true
+        use_ssh_args: true
+        rsync_opts: >-
+          {{ ['--itemize-changes', '--dry-run'] + (transfer_excludes | map('regex_replace', '^(.*)$', '--exclude=\1') | list) }}
+      become: true
+      register: verify_result
+      check_mode: false
+      changed_when: false
+      loop: "{{ media_transfers }}"
+      loop_control:
+        label: "{{ item.dest }}"
+      tags: [verify, never]
+
+    - name: Report verification
+      ansible.builtin.assert:
+        that: item.stdout_lines | select('match', '^[<>c]f') | list | length == 0
+        success_msg: "{{ item.item.dest }}: every file matches"
+        fail_msg: "{{ item.item.dest }}: some files differ, run the copy again"
+      loop: "{{ verify_result.results }}"
+      loop_control:
+        label: "{{ item.item.dest }}"
+      tags: [verify, never]
