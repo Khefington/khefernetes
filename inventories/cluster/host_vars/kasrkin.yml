@@ -1,3 +1,0 @@
----
-# inventory host_vars Overwritten by playbook/host_vars/*
-cluster_precedence: "inventory host_vars/*"

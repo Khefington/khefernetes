@@ -1,0 +1,22 @@
+---
+# Nightly Jellyfin backup: asks Jellyfin for a consistent backup, copies it to the HDD
+# (<hdd>/data/backups/jellyfin) and keeps the newest N. First-time steps: docs/runbooks/jellyfin-backup.md
+#   ansible-playbook playbooks/apps/jellyfin_backup.yml
+#   ansible-playbook playbooks/apps/jellyfin_backup.yml -e jellyfin_backup_run_now=true   (run one now, as a test)
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: Make sure the backup folder exists on the HDD
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Create the folder tree
+      ansible.builtin.import_role:
+        name: nfs_server
+        tasks_from: tree.yml
+
+- name: Install the backup job
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - jellyfin_backup

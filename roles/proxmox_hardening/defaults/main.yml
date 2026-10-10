@@ -1,0 +1,2 @@
+---
+proxmox_hardening_sshd_dropin: /etc/ssh/sshd_config.d/00-hardening.conf

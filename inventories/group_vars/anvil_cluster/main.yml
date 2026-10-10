@@ -1,0 +1,9 @@
+---
+ansible_user: ansible
+ansible_become: true
+
+# Default VM size. Override per host in host_vars/<host>.yml.
+vm_cores: 4
+vm_memory_mb: 8192
+vm_disk_gb: 100
+vm_storage: local-lvm # where the cloned VM disks are created

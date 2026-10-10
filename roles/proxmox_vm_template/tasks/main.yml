@@ -1,0 +1,84 @@
+---
+# Rule of thumb used here: files on the host go over SSH, Proxmox objects go through the API.
+# API connection settings come from the playbook's module_defaults.
+
+# ---- Part 1: prepare the image file on the host (SSH) ----
+- name: Install libguestfs-tools (edits disk images without booting them)
+  ansible.builtin.apt:
+    name: libguestfs-tools
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the image directory
+  ansible.builtin.file:
+    path: "{{ image_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Download the Ubuntu cloud image and verify its checksum
+  ansible.builtin.get_url:
+    url: "{{ image_base_url }}/{{ image_orig }}"
+    dest: "{{ image_dir }}/{{ image_orig }}"
+    checksum: "sha256:{{ image_base_url }}/SHA256SUMS"
+    mode: "0644"
+
+- name: Build the customized image (adds the QEMU guest agent)
+  ansible.builtin.shell: |
+    set -e
+    cp {{ image_dir }}/{{ image_orig }} {{ image_dir }}/{{ image_custom }}.tmp
+    virt-customize -a {{ image_dir }}/{{ image_custom }}.tmp --install qemu-guest-agent
+    mv {{ image_dir }}/{{ image_custom }}.tmp {{ image_dir }}/{{ image_custom }}
+  args:
+    creates: "{{ image_dir }}/{{ image_custom }}"
+  environment:
+    LIBGUESTFS_BACKEND: direct
+
+# ---- Part 2: create the VM through the API ----
+- name: Create the empty VM (API)
+  community.proxmox.proxmox_kvm:
+    vmid: "{{ template_vmid }}"
+    name: "{{ template_name }}"
+    state: present
+    ostype: l26
+    cpu: host
+    cores: "{{ proxmox_vm_template_cores }}"
+    memory: "{{ proxmox_vm_template_memory_mb }}"
+    scsihw: virtio-scsi-single
+    net:
+      net0: "virtio,bridge={{ template_bridge }}"
+    ide:
+      ide2: "{{ template_storage }}:cloudinit"
+    serial:
+      serial0: socket
+    vga: serial0
+    agent: "enabled=1"
+    tags: [template, ubuntu]
+    timeout: 120
+  delegate_to: localhost
+  become: false
+
+# ---- Part 3: attach the image as the VM's disk (SSH) ----
+# Why SSH: the API only lets root@pam import from a file path, and the token is not root.
+- name: Read the VM's current configuration
+  ansible.builtin.command: "qm config {{ template_vmid }}"
+  register: template_vm_config
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Import the image as the VM's boot disk
+  ansible.builtin.command: >-
+    qm set {{ template_vmid }}
+    --scsi0 {{ template_storage }}:0,import-from={{ image_dir }}/{{ image_custom }}
+    --boot order=scsi0
+  when: "'scsi0:' not in (template_vm_config.stdout | default(''))"
+  changed_when: true
+
+# ---- Part 4: freeze it as a template (API) ----
+- name: Convert the VM to a template (API)
+  community.proxmox.proxmox_kvm:
+    vmid: "{{ template_vmid }}"
+    state: template
+  delegate_to: localhost
+  become: false

@@ -1,3 +1,0 @@
----
-# Example of host_var defined in a host_vars/host folder
-precedence_host_var_for_basilisk_host: true

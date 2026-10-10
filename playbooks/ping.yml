@@ -1,7 +1,8 @@
 ---
-- name: Attempt to ping a host
-  hosts: castellan
+# Quick "can Ansible reach everything?" check.   make ping
+- name: Ping every host
+  hosts: all
+  gather_facts: false
   tasks:
-    - name: Ping instance
+    - name: Ping
       ansible.builtin.ping:
-        data: pong

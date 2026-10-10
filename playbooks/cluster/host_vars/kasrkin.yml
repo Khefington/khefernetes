@@ -1,3 +1,0 @@
----
-# Playbook host_vars/* | Overwritten by host facts and cached set_facts
-cluster_precedence: "playbook/host_vars/*"

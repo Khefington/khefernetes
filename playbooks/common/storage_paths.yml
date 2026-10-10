@@ -1,0 +1,8 @@
+---
+# Imported by every playbook that needs to know where the disks are mounted.
+# Publishes media_hdd_path, media_data_path, media_staging_path on castellan.
+- name: Resolve the storage paths on the Proxmox host
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - storage_paths

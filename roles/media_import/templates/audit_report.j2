@@ -1,0 +1,20 @@
+{% for plan, src_r, dest_r, pend_r in media_import_report_items %}
+{% set s = src_r.stdout | from_json %}
+{% set d = dest_r.stdout | from_json %}
+{% set todo = pend_r.stdout_lines | select('match', '^[<>]f') | list %}
+== {{ plan.library }}   {{ plan.src }}  ->  {{ plan.dest }}
+   source:        {{ s.files }} files, {{ s.bytes | int | human_readable }}{{ '' if s.symlinks == 0 else ', ' ~ s.symlinks ~ ' symlinks (' ~ s.broken_symlinks ~ ' broken) ' ~ ('FOLLOWED' if media_import_follow_symlinks | bool else 'SKIPPED') }}
+   destination:   {{ d.files }} files, {{ d.bytes | int | human_readable }}
+   still to copy: {{ todo | length }} file(s){{ '' if todo | length == 0 else '   <-- run the import again' }}
+   nested folder: {{ 'YES, ' ~ plan.dest ~ plan.src_name ~ '/ exists (run flatten_media.yml)' if d.nested else 'no' }}
+{% if s.multi_link_files > 0 %}
+   note:          {{ s.multi_link_files }} source files have more than one name (hardlinks); each name is copied as its own file
+{% endif %}
+{% for line in todo[:media_import_list_limit] %}
+     missing: {{ line.split(' ', 1)[1] if ' ' in line else line }}
+{% endfor %}
+{% if todo | length > media_import_list_limit %}
+     ... and {{ todo | length - media_import_list_limit }} more
+{% endif %}
+
+{% endfor %}

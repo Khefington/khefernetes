@@ -1,0 +1,86 @@
+---
+- name: Make sure a disk was chosen
+  ansible.builtin.assert:
+    that: staging_disk_device is defined
+    fail_msg: "Set staging_disk_device in inventories/group_vars/proxmox/storage.yml (check with: lsblk -f)."
+
+- name: Inspect the disk
+  ansible.builtin.command: lsblk --json --bytes --output NAME,TYPE,SIZE,FSTYPE,MODEL,SERIAL {{ staging_disk_device }}
+  register: staging_lsblk
+  changed_when: false
+  check_mode: false
+
+- name: Read the details
+  ansible.builtin.set_fact:
+    staging_disk: "{{ (staging_lsblk.stdout | from_json).blockdevices[0] }}"
+    staging_partition: "{{ staging_disk_device }}{{ 'p1' if staging_disk_device[-1] is match('[0-9]') else '1' }}"
+
+- name: Is it already prepared (our partition mounted at the staging path)?
+  ansible.builtin.command: findmnt --noheadings --output SOURCE {{ staging_mount_path }}
+  register: staging_current_mount
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Work out the state
+  ansible.builtin.set_fact:
+    staging_ready: "{{ staging_current_mount.stdout | trim == staging_partition }}"
+    staging_disk_is_blank: "{{ staging_disk.children is not defined and staging_disk.fstype is none }}"
+
+- name: Show what was found
+  ansible.builtin.debug:
+    msg:
+      - "Device: {{ staging_disk_device }}  Model: {{ staging_disk.model }}  Serial: {{ staging_disk.serial }}"
+      - "Size: {{ (staging_disk.size | int / 1000000000000) | round(2) }} TB"
+      - "State: {{ 'already prepared and mounted' if staging_ready else ('blank, ready to format' if staging_disk_is_blank else 'NOT BLANK') }}"
+
+- name: Check it is a 2TB-class disk (guards against the wrong device)
+  ansible.builtin.assert:
+    that:
+      - staging_disk.type == 'disk'
+      - staging_disk.size | int > proxmox_staging_disk_min_bytes
+      - staging_disk.size | int < proxmox_staging_disk_max_bytes
+    fail_msg: "{{ staging_disk_device }} does not look like the 2TB SSD. Run 'lsblk -f' on castellan and fix staging_disk_device."
+
+- name: Refuse to touch a disk that already has data
+  ansible.builtin.fail:
+    msg: >-
+      {{ staging_disk_device }} already has partitions or a filesystem and is not our staging disk.
+      Inspect it with 'lsblk -f'. If you are certain it is disposable, wipe it by hand
+      (wipefs --all {{ staging_disk_device }}) and run this again.
+  when: not staging_ready and not staging_disk_is_blank
+
+- name: Stop here unless formatting was explicitly requested
+  ansible.builtin.meta: end_host
+  when: not staging_ready and not (staging_disk_prepare | bool)
+
+- name: Make sure parted is installed
+  ansible.builtin.apt:
+    name: parted
+    state: present
+
+# Everything below only runs on a blank disk with the switch on, or on re-runs.
+- name: Create a GPT partition table with one partition
+  community.general.parted:
+    device: "{{ staging_disk_device }}"
+    label: gpt
+    number: 1
+    part_start: 1MiB
+    part_end: 100%
+    state: present
+  when: not staging_ready
+
+- name: Create the ext4 filesystem
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ staging_partition }}"
+    opts: "-L {{ staging_label }} -m 1" # 1% reserved for root instead of the default 5%
+  when: not staging_ready
+
+- name: Mount it now and on every boot ('nofail' so a missing disk cannot block Proxmox booting)
+  ansible.posix.mount:
+    path: "{{ staging_mount_path }}"
+    src: "LABEL={{ staging_label }}"
+    fstype: ext4
+    opts: defaults,noatime,nofail
+    state: mounted

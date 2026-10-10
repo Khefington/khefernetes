@@ -1,0 +1,26 @@
+---
+# Copy media from the Windows PC (via WSL) onto the HDD. Safe to re-run. Never deletes anything.
+#   ansible-playbook playbooks/operations/import_media.yml
+#   ansible-playbook playbooks/operations/import_media.yml -e import_refresh_jellyfin=true   (rescan afterwards)
+# Needs rsync in WSL (sudo apt install rsync) and playbooks/storage/nfs.yml to have run.
+# Afterwards run playbooks/operations/audit_media.yml to prove nothing is missing.
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+  vars:
+    storage_paths_require_staging_mounted: false
+
+- name: Import media from the Windows PC
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - media_import
+
+- name: Ask Jellyfin to rescan its libraries (optional)
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Rescan
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: refresh.yml
+      when: import_refresh_jellyfin | default(false) | bool

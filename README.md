@@ -1,90 +1,53 @@
 # Khefernetes
-Ansible-driven RKE2 cluster on Proxmox to host media server.
 
-# Dependencies
-[Python]
-ansible-core>=2.16
-ansible-lint
-proxmoxer
-requests
+A home media server, fully automated with Ansible and rebuildable from Git:
+Proxmox host (castellan) -> 3 Ubuntu VMs -> RKE2 Kubernetes -> Jellyfin, with the library on the host's HDD shared over NFS.
 
-[Ansible]
-  - name: community.proxmox
-  - name: community.general
-  - name: ansible.posix
-  - name: kubernetes.core
+## Quick start
 
-## Ansible Precedence
-Everything below the former overwrites the former. I.E. Role defaults is overwritten by inventory group_vars/all
+```
+make setup && source .venv/bin/activate     # Python packages + Ansible collections
+echo '<vault password>' > .vault_pass       # git-ignored; see docs/secrets.md
+make ping                                   # can Ansible reach everything?
+make site                                   # the whole build, in order
+```
+`make help` lists every target.
 
-1.	role defaults/	(lowest)
-2.	inventory group_vars/all	lost to the playbook's all
-3.	playbook group_vars/all	beat inventory all
-4.	inventory group_vars/<specific group>	beat playbook all for castellan
-5.	playbook group_vars/<specific group>	
-6.	host vars (inventory, then playbook)	
-7.	play vars: and vars_files:	
-8.	role vars/, task vars, set_fact	
-9.	-e on the command line	beat everything in my test
+## Everyday tasks
 
-## Repository Layout
-repo/
-├ansible.cfg                      # config for ansible, can define defaults and other vars here
-├README.md                        # You are here | general info about the repo
-├requirements.txt
-├requirements.yml
-├.vault_pass                      # Encrypted file for the vault password, no need to type it each run
-├inventories/                     # the hosts, groups, etc. However you want to define it
-├── cluster/                      # renamed from "cluster", since it covers the whole lab
-│   ├── anvil.yml                 # the hypervisor host(s)
-│   ├── castellan.yml                  # the RKE2 VMs and their groups
-│   └── group_vars/
-│       ├── all/
-│       │   ├── vars.yml          # Things almost everything in the cluster needs to know
-│       │   └── vault.yml         # secrets every inventory in cluster shares
-│       ├── proxmox/
-│       │   ├── vars.yml          # Vars specific to the proxmox group
-│       │   └── vault.yml         # Secret vars specific to proxmox
-│       └── anvil_cluster/
-│           ├── vars.yml          # Vars specific to the anvil_cluster
-│           └── vault.yml         # Secret vars specific to anvil_cluster
-├playbooks/                       # The plays to run, long term organized futher
-├───create_media_server.yml
-├───ping.yml
-├─── cluster/
-│   └── group_vars/
-│      └── all/
-│         └── all.yml
-├roles/                          # The "nouns" to perform actions on, install, remove, etc.
-├───create_media_server.yml
-├───ping.yml
+| Task | Command |
+|---|---|
+| Copy media from the Windows PC | `make import-media` |
+| Prove nothing is missing | `make audit-media` |
+| Fix media copied one folder too deep | `make flatten-media` then `make flatten-media APPLY=1` |
+| Jellyfin trickplay / file-access problems | `make diagnose-jellyfin` |
+| Back up Jellyfin now | `make backup-now` |
+| Add a library (e.g. audiobooks) | add it to `media_libraries`, then `make nfs` |
+| Bump a version | edit `inventories/group_vars/all/versions.yml`, run the matching target |
+| Lint everything | `make lint` |
 
+## Layout
 
-## Dev Log
-High Level Steps / phases
-1. Create VM template
-2. Automate cloning of template
-3. Automate isntall of RKE2 (WIP)
-4. Automate/Setup Storage
-5. Automate Jellyfin Install/Configuration
-6. Automate MetalLB/ingress creation/config
-7. Automate content share and network protection (qBittorrent + NordVPN)
-8. Automate Configuration of RKE2
-### Create VM template (DONE)
-#### 10/3/2026
-1. I'm starting to pick up on the intentions some more and how ansible tends to see content in the repo. The most important thing I've learned is that naming is very intentional and so is directory structure. While ansible is VERY liberal in how it will allow you to structure a repo it will only check for things in a certain way. For example, if you only ever have one target/objective for automation, you could simply make inventories, maybe apply a group_vars folder but then just slap your host files right there. However, if you have a multitude of inventories maybe you split them up into sub directories. More of less, if you define a folder as an inventory, it will look for yml files inside of it, group_vars, groups, and any relevant files inside of those two directories. So in the case of this repo, we have a "cluster," inside of that.....
+```
+inventories/   hosts + all site-specific values (group_vars/, host_vars/)
+playbooks/                site.yml, one playbook per stage, operations/ for day-2 tasks
+roles/                    all the logic; playbooks only pick hosts and roles
+docs/                     architecture, storage, secrets, rebuild, runbooks, migration
+scripts/                  helper scripts
+```
+Details: [docs/architecture.md](docs/architecture.md). Storage and large-library guidance: [docs/storage.md](docs/storage.md).
 
-2. As I was writing the previous I realized that maybe I didn't understand it well enough so I took a deep dive to learn more. An inventory is just a file. In our repo, this could just be anvil or castellan. An inventory has many formats but it's just a yml or ini file to hold content. An inventory file holds a ton of content and is highly configurable. You can add/create groups, hosts, etc. Let's take "anvil.yml" as an example. Inside of it you can see 3 main groups anvil_control_planes, anvil_workers, and anvil_cluster. Inside of some of those groups we define "hosts." There is another group in there that we make by calling referencing the two other groups as its children. 
-### Automate cloning of template (DONE)
-#### 10/4/2026
-1. Took a little longer than anticipated but this section is now complete
-### Automate install of RKE2 (DONE)
-#### 10/4/2026
-1. Took a lot from the homelab stuff that is out there, pretty painless once you put the pieces together
-### Automate/Setup Storage (WIP)
-#### 10/4/2026
-1. Starting now
-### Automate Jellyfin Install/Configuration
-### Automate MetalLB/ingress creation/config
-### Automate content share and network protection (qBittorrent + NordVPN)
-### Automate Configuration of RKE2
+## Documentation
+
+- [Architecture and design rules](docs/architecture.md)
+- [Storage, hardlinks, books, large libraries](docs/storage.md)
+- [Secrets](docs/secrets.md)
+- [Rebuild / restore drill](docs/rebuild.md)
+- Runbooks: [import media](docs/runbooks/import-media.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
+- [Migrating from the old layout](docs/MIGRATION.md)
+- [Ansible variable precedence cheat sheet](docs/ansible-precedence.md)
+- [Dev log](docs/devlog.md)
+
+## Roadmap
+MetalLB (192.168.1.200-220, outside the router's DHCP pool) and a Traefik experiment; etcd snapshots with an off-node copy;
+qBittorrent behind NordVPN using the 2TB SSD for incomplete downloads; a destroy-and-rebuild test with a Jellyfin restore drill.

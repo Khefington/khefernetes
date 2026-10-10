@@ -1,0 +1,19 @@
+---
+# The media library definition: the single source of truth.
+# Adding a library = add a name here, then run playbooks/storage/nfs.yml. That creates
+#   data/media/<name>/       (what Jellyfin and friends read)
+#   data/downloads/<name>/   (where the downloader puts finished files for that category)
+media_libraries:
+  - movies
+  - tv
+  - music
+  - books
+
+# Where Jellyfin's trickplay (scrub-bar thumbnail) files live on the 2TB SSD, relative to <staging>/appdata.
+# Mounted at /config/data/trickplay, so they survive a cluster rebuild and Jellyfin re-adopts them.
+jellyfin_trickplay_subpath: jellyfin/trickplay
+
+# The 'media' user and group own every file. Containers run as this uid/gid, and the NFS export
+# squashes every client to it, so ownership is identical from every node.
+media_uid: 1500
+media_gid: 1500

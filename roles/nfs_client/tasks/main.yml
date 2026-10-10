@@ -1,0 +1,15 @@
+---
+# nfs_client_exports comes from the playbook: the list published by the nfs_server role.
+- name: Install the NFS client tools
+  ansible.builtin.apt:
+    name: nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Mount, write, check ownership, hardlink (then clean up)
+  ansible.builtin.include_tasks: test_export.yml
+  loop: "{{ nfs_client_exports }}"
+  loop_control:
+    loop_var: export
+    index_var: export_idx

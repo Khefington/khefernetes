@@ -1,0 +1,12 @@
+---
+# Bring the storage into Kubernetes:
+#   - a 'media' namespace with PersistentVolumes/Claims for the NFS shares (data + incomplete)
+#   - the local-path provisioner, a StorageClass for node-local volumes (Jellyfin's config)
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: Storage manifests on the control plane
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - k8s_storage

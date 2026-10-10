@@ -1,0 +1,39 @@
+---
+- name: Download the local-path provisioner manifest (pinned version, checksum verified)
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/{{ local_path_version }}/deploy/local-path-storage.yaml"
+    dest: "{{ rke2_auto_manifest_dir }}/local-path-storage.yaml"
+    checksum: "sha256:{{ local_path_sha256 }}"
+    mode: "0644"
+
+- name: Write the media namespace, volumes and claims
+  ansible.builtin.template:
+    src: media-storage.yaml.j2
+    dest: "{{ rke2_auto_manifest_dir }}/media-storage.yaml"
+    mode: "0644"
+
+- name: Wait until all media claims are Bound
+  ansible.builtin.command: "{{ kubectl_cmd }} get pvc -n {{ media_namespace }} -o jsonpath={.items[*].status.phase}"
+  register: k8s_storage_pvc_phases
+  changed_when: false
+  check_mode: false
+  retries: 18
+  delay: 10
+  until: >-
+    k8s_storage_pvc_phases.stdout.split() | length == k8s_storage_expected_claims
+    and k8s_storage_pvc_phases.stdout.split() | unique == ['Bound']
+
+- name: Wait until the local-path provisioner is running
+  ansible.builtin.command: "{{ kubectl_cmd }} -n local-path-storage rollout status deployment/local-path-provisioner --timeout=120s"
+  changed_when: false
+  check_mode: false
+
+- name: Show what exists now
+  ansible.builtin.command: "{{ kubectl_cmd }} get storageclass,pv,pvc -A"
+  register: k8s_storage_result
+  changed_when: false
+  check_mode: false
+
+- name: Print it
+  ansible.builtin.debug:
+    var: k8s_storage_result.stdout_lines

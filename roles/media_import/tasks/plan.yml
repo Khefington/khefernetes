@@ -1,0 +1,45 @@
+---
+# Turns media_transfers into a normalised plan. Runs on the Proxmox host (needs the storage_paths facts).
+#   src   always ends in exactly one '/'  => rsync copies the folder's CONTENTS into dest
+#         (without the slash rsync would create dest/<folder name>/ and nest everything one level too deep)
+#   dest  <hdd>/data/media/<library>/
+- name: Make sure transfers are defined
+  ansible.builtin.assert:
+    that:
+      - media_transfers is defined
+      - media_transfers | length > 0
+      - media_transfers | selectattr('src', 'search', 'CHANGE_ME') | list | length == 0
+    fail_msg: "Set media_transfers in inventories/group_vars/proxmox/import.yml and replace every CHANGE_ME."
+
+- name: Start an empty plan
+  ansible.builtin.set_fact:
+    media_import_plan: []
+
+- name: Add each transfer (library name, normalised source, destination)
+  ansible.builtin.set_fact:
+    media_import_plan: >-
+      {{ media_import_plan + [{
+        'library': media_import_lib,
+        'src': media_import_src ~ '/',
+        'src_name': media_import_src | basename,
+        'dest': media_data_path ~ '/media/' ~ media_import_lib ~ '/'
+      }] }}
+  vars:
+    # Accepts the old format too: { src, dest: "media/books" }
+    media_import_lib: "{{ item.library | default((item.dest | default('')) | regex_replace('^/?media/', '') | regex_replace('/+$', '')) }}"
+    media_import_src: "{{ item.src | regex_replace('/+$', '') }}"
+  loop: "{{ media_transfers }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Every transfer must name a known library
+  ansible.builtin.assert:
+    that:
+      - item.library in media_libraries
+    quiet: true
+    fail_msg: >-
+      '{{ item.library }}' is not in media_libraries ({{ media_libraries | join(', ') }}).
+      Add it to inventories/group_vars/all/media.yml and run playbooks/storage/nfs.yml first.
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.src }} -> {{ item.library }}"

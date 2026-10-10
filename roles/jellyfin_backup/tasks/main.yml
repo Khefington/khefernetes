@@ -1,0 +1,29 @@
+---
+- name: Make sure the API key is in the vault
+  ansible.builtin.assert:
+    that:
+      - vault_jellyfin_api_key is defined
+      - vault_jellyfin_api_key | length > 10
+    fail_msg: "Add vault_jellyfin_api_key to the vault (see docs/runbooks/jellyfin-backup.md)."
+
+- name: Create the manifest folder
+  ansible.builtin.file:
+    path: "{{ k8s_app_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the manifest (contains the API key, root only)
+  ansible.builtin.template:
+    src: jellyfin-backup.yaml.j2
+    dest: "{{ jellyfin_backup_manifest_path }}"
+    mode: "0600"
+  diff: false
+
+- name: Kubectl apply
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ jellyfin_backup_manifest_path }}"
+  register: jellyfin_backup_apply
+  changed_when: jellyfin_backup_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+- name: Run one backup right now as a test
+  ansible.builtin.include_tasks: run_now.yml
+  when: jellyfin_backup_run_now | bool

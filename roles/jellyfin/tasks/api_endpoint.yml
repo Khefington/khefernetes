@@ -1,0 +1,12 @@
+---
+# Finds Jellyfin's in-cluster address. The control plane node can reach ClusterIPs, so the API
+# is called from there; nothing has to be exposed.
+- name: Find the Jellyfin service address
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get svc jellyfin -o jsonpath={.spec.clusterIP}"
+  register: jellyfin_svc_ip
+  changed_when: false
+  check_mode: false
+
+- name: Remember the API address
+  ansible.builtin.set_fact:
+    jellyfin_api_url: "http://{{ jellyfin_svc_ip.stdout }}:8096"

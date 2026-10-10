@@ -1,0 +1,10 @@
+---
+# How Ansible talks to the Proxmox API. Needed by the playbooks that build the template and the VMs,
+# which run against the VM hosts (not only against castellan), so these live in group_vars/all.
+# The token secret is in the vault. Never write it in this file.
+proxmox_node: castellan
+proxmox_api_host: "{{ hostvars['castellan'].ansible_host }}"
+proxmox_api_user: ansible@pam
+proxmox_api_token_id: Automation
+proxmox_api_token_secret: "{{ vault_proxmox_api_token_secret }}"
+proxmox_api_validate_certs: false # Proxmox ships a self-signed certificate

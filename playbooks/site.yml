@@ -1,0 +1,22 @@
+---
+# The whole build, in order. Everything is idempotent, so re-running it is safe.
+#   ansible-playbook playbooks/site.yml
+#
+# Left out on purpose (one-off or destructive; run them by hand when you mean it):
+#   proxmox/bootstrap.yml, proxmox/harden.yml   first-time host setup
+#   proxmox/staging_disk.yml -e staging_disk_prepare=true   formats a disk
+#   operations/*                                day-2 tasks (import, audit, diagnose)
+- name: Build the VM template
+  ansible.builtin.import_playbook: proxmox/template.yml
+- name: Create the cluster VMs
+  ansible.builtin.import_playbook: cluster/create_vms.yml
+- name: Share storage over NFS
+  ansible.builtin.import_playbook: storage/nfs.yml
+- name: Install RKE2
+  ansible.builtin.import_playbook: cluster/rke2.yml
+- name: Bring the storage into Kubernetes
+  ansible.builtin.import_playbook: storage/kubernetes.yml
+- name: Deploy Jellyfin
+  ansible.builtin.import_playbook: apps/jellyfin.yml
+- name: Install the Jellyfin backup job
+  ansible.builtin.import_playbook: apps/jellyfin_backup.yml

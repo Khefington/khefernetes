@@ -1,0 +1,55 @@
+---
+# Checks that need the Windows side: rsync in WSL, and every source folder present.
+- name: Make sure rsync exists in WSL
+  ansible.builtin.command: which rsync
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+
+- name: Check every source folder exists in WSL
+  ansible.builtin.stat:
+    path: "{{ item.src }}"
+  delegate_to: localhost
+  become: false
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.src }}"
+  register: media_import_src_stats
+
+- name: Stop if a source is missing or not a folder
+  ansible.builtin.assert:
+    that: item.stat.exists and item.stat.isdir
+    quiet: true
+    fail_msg: "{{ item.item.src }} is missing or not a folder. Windows drive C: is /mnt/c in WSL."
+  loop: "{{ media_import_src_stats.results }}"
+  loop_control:
+    label: "{{ item.item.src }}"
+
+# A symlink that points at nothing cannot be followed: rsync would stop with exit code 23 for the whole
+# folder. They have no content to copy, so they go on a per-library exclude list. Anything else that
+# makes rsync fail (unreadable file, link loop) still fails loudly, which is what we want.
+- name: Find dangling symlinks and write an exclude list per library
+  ansible.builtin.shell: |
+    set -o pipefail
+    out={{ (media_import_tmp_dir ~ '/khefernetes-' ~ item.library ~ '-dangling.exclude') | quote }}
+    cd {{ item.src | quote }}
+    # one anchored pattern per line, with glob characters escaped
+    find . -xtype l -printf '/%P\n' | sed -e 's/[][*?\\]/\\&/g' > "$out"
+    chmod 600 "$out"
+    wc -l < "$out"
+  args:
+    executable: /bin/bash
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  register: media_import_dangling
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.library }}"
+
+- name: Install rsync on castellan
+  ansible.builtin.apt:
+    name: rsync
+    state: present

@@ -1,0 +1,48 @@
+---
+# Repairs the "one level too deep" layout, e.g. media/movies/Movies/<titles> -> media/movies/<titles>.
+# Both folders are on the same filesystem, so moving is an instant rename: no data is copied.
+# Safe by default: it only REPORTS unless media_import_apply_flatten is true.
+#   ansible-playbook playbooks/operations/flatten_media.yml                                  (report)
+#   ansible-playbook playbooks/operations/flatten_media.yml -e media_import_apply_flatten=true  (do it)
+- name: Work out the folders
+  ansible.builtin.import_tasks: plan.yml
+
+- name: Look for nested folders and move their contents up one level
+  ansible.builtin.shell: |
+    set -euo pipefail
+    d={{ item.dest | quote }}
+    n="$d"{{ item.src_name | quote }}
+    apply={{ 1 if media_import_apply_flatten | bool else 0 }}
+    [ -d "$n" ] || { echo "OK: no nested folder at $n"; exit 0; }
+    echo "FOUND nested folder: $n"
+    collide=0
+    for e in "$n"/* "$n"/.[!.]*; do
+      [ -e "$e" ] || continue
+      b=$(basename "$e")
+      if [ -e "$d$b" ] && [ "$d$b" != "$n" ]; then echo "COLLISION: '$b' exists in both places"; collide=1; fi
+      if [ "$d$b" = "$n" ]; then echo "COLLISION: '$b' has the same name as the nested folder itself"; collide=1; fi
+    done
+    [ "$collide" = 0 ] || { echo "Nothing moved. Resolve the collisions by hand."; exit 3; }
+    count=$(find "$n" -mindepth 1 -maxdepth 1 | wc -l)
+    if [ "$apply" = 1 ]; then
+      find "$n" -mindepth 1 -maxdepth 1 -exec mv -n -t "$d" {} +
+      rmdir "$n"
+      echo "MOVED $count item(s) up into $d and removed $n"
+    else
+      echo "WOULD MOVE $count item(s) up into $d (re-run with -e media_import_apply_flatten=true)"
+    fi
+  args:
+    executable: /bin/bash
+  become: true
+  changed_when: "'MOVED' in media_import_flatten.stdout"
+  register: media_import_flatten
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.library }}"
+
+- name: Result
+  ansible.builtin.debug:
+    msg: "{{ item.item.library }}: {{ item.stdout_lines }}"
+  loop: "{{ media_import_flatten.results }}"
+  loop_control:
+    label: "{{ item.item.library }}"

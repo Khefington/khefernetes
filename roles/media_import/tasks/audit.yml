@@ -1,0 +1,100 @@
+---
+# Read-only completeness check: compares the Windows source with the HDD and says exactly what is wrong.
+# Changes nothing.
+- name: Work out what to compare
+  ansible.builtin.import_tasks: plan.yml
+
+- name: Check the Windows side (rsync, source folders)
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Count what is in each source folder (WSL)
+  ansible.builtin.shell: |
+    set -uo pipefail
+    src={{ item.src | quote }}
+    files=$(find "$src" -type f 2>/dev/null | wc -l)
+    links=$(find "$src" -type l 2>/dev/null | wc -l)
+    broken=$(find "$src" -xtype l 2>/dev/null | wc -l)
+    multi=$(find "$src" -type f -links +1 2>/dev/null | wc -l)
+    bytes=$(du -sb {{ '-L' if media_import_follow_symlinks | bool else '' }} "$src" 2>/dev/null | cut -f1)
+    printf '{"files":%s,"symlinks":%s,"broken_symlinks":%s,"multi_link_files":%s,"bytes":%s}\n' "$files" "$links" "$broken" "$multi" "${bytes:-0}"
+  args:
+    executable: /bin/bash
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  check_mode: false
+  register: media_import_src_counts
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Count what is on the HDD, and look for a nested copy (castellan)
+  ansible.builtin.shell: |
+    set -uo pipefail
+    d={{ item.dest | quote }}
+    files=$(find "$d" -type f 2>/dev/null | wc -l)
+    bytes=$(du -sb "$d" 2>/dev/null | cut -f1)
+    nested=false
+    [ -d "$d"{{ item.src_name | quote }} ] && nested=true
+    printf '{"files":%s,"bytes":%s,"nested":%s}\n' "$files" "${bytes:-0}" "$nested"
+  args:
+    executable: /bin/bash
+  become: true
+  changed_when: false
+  check_mode: false
+  register: media_import_dest_counts
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+# A dry run (--dry-run changes nothing). Same options as the real copy, so it answers:
+# "if I ran the import now, which files would it still transfer?"
+- name: List files that still need to be transferred (dry run)
+  ansible.posix.synchronize:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    archive: false
+    recursive: true
+    times: true
+    links: false
+    copy_links: "{{ media_import_follow_symlinks | bool }}"
+    checksum: "{{ media_import_checksum | bool }}"
+    use_ssh_args: true
+    rsync_opts: >-
+      {{ ['--itemize-changes', '--dry-run'] + media_import_excludes
+         + (['--exclude-from=' ~ media_import_tmp_dir ~ '/khefernetes-' ~ item.library ~ '-dangling.exclude'] if media_import_follow_symlinks | bool else []) }}
+  become: true
+  changed_when: false
+  check_mode: false
+  register: media_import_pending
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.src }}"
+
+- name: Clean up
+  ansible.builtin.import_tasks: cleanup.yml
+
+- name: Report
+  ansible.builtin.debug:
+    msg: "{{ lookup('ansible.builtin.template', 'audit_report.j2') | trim | split('\n') }}"
+  vars:
+    media_import_report_items: >-
+      {{ media_import_plan | zip(media_import_src_counts.results, media_import_dest_counts.results, media_import_pending.results) | list }}
+
+- name: Collect the problems
+  ansible.builtin.set_fact:
+    media_import_problems: >-
+      {{ (media_import_problems | default([]))
+         + (['%s: %d file(s) in the source are missing or different on the HDD' % (item.0.library, item.3.stdout_lines | select('match', '^[<>]f') | list | length)]
+            if (item.3.stdout_lines | select('match', '^[<>]f') | list | length) > 0 else [])
+         + (['%s: files sit in a nested folder %s%s/ (run playbooks/operations/flatten_media.yml)' % (item.0.library, item.0.dest, item.0.src_name)]
+            if (item.2.stdout | from_json).nested else []) }}
+  loop: "{{ media_import_plan | zip(media_import_src_counts.results, media_import_dest_counts.results, media_import_pending.results) | list }}"
+  loop_control:
+    label: "{{ item.0.library }}"
+
+- name: Verdict
+  ansible.builtin.assert:
+    that: (media_import_problems | default([])) | length == 0 or not (media_import_fail_on_problems | bool)
+    success_msg: "Every file in every source folder is on the HDD."
+    fail_msg: "Problems found: {{ media_import_problems | default([]) | join(' | ') }}"

@@ -1,0 +1,10 @@
+---
+k8s_storage_nfs_server_ip: "{{ hostvars[groups['proxmox'][0]].ansible_host }}"
+k8s_storage_data_export_path: "{{ hostvars[groups['proxmox'][0]].media_data_path }}"
+k8s_storage_staging_export_path: "{{ hostvars[groups['proxmox'][0]].media_staging_path }}"
+k8s_storage_appdata_export_path: "{{ hostvars[groups['proxmox'][0]].media_appdata_path }}"
+# Sizes shown to Kubernetes. NFS does not enforce them; they just have to be >= the claims.
+k8s_storage_data_capacity: 4Ti # hard drive size
+k8s_storage_staging_capacity: 1800Gi # 2TB SSD
+k8s_storage_appdata_capacity: 500Gi # trickplay and other app files on the 2TB SSD
+k8s_storage_expected_claims: 3

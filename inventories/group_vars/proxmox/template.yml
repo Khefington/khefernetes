@@ -1,0 +1,8 @@
+---
+# Only needed to BUILD the template, on castellan.
+template_storage: local-lvm
+template_bridge: vmbr0
+image_base_url: "https://cloud-images.ubuntu.com/{{ ubuntu_release }}/current"
+image_orig: "{{ ubuntu_release }}-server-cloudimg-amd64.img"
+image_custom: "khefernetes-{{ ubuntu_release }}-server-cloudimg-amd64-qga.img"
+image_dir: /var/lib/vz/cloud-images

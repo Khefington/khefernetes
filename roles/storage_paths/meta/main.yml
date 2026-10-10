@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: storage_paths
+  author: khefernetes
+  description: "Ask Proxmox where the media storage lives and publish the paths as facts for other plays"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

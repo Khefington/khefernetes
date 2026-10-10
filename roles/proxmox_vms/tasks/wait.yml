@@ -1,0 +1,25 @@
+---
+# Waiting half: normal SSH into the freshly booted guest.
+- name: Wait until SSH answers as the ansible user
+  ansible.builtin.wait_for_connection:
+    delay: 10
+    timeout: "{{ proxmox_vms_ssh_wait_seconds }}"
+
+- name: Wait for cloud-init to finish (exit code 2 = finished with recoverable warnings)
+  ansible.builtin.command: cloud-init status --wait --long
+  register: proxmox_vms_cloud_init
+  changed_when: false
+  failed_when: proxmox_vms_cloud_init.rc not in [0, 2]
+
+- name: Report any degraded state other than the known 'user' deprecation
+  ansible.builtin.debug:
+    msg: "cloud-init finished degraded: {{ proxmox_vms_cloud_init.stdout_lines }}"
+  when:
+    - proxmox_vms_cloud_init.rc == 2
+    - "'users' list instead' not in proxmox_vms_cloud_init.stdout"
+
+- name: Check that the hostname matches the inventory name
+  ansible.builtin.command: hostname
+  register: proxmox_vms_hostname
+  changed_when: false
+  failed_when: proxmox_vms_hostname.stdout != inventory_hostname

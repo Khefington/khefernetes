@@ -1,0 +1,4 @@
+---
+proxmox_debian_suite: bookworm
+proxmox_bootstrap_user: ansible
+proxmox_bootstrap_tools: [smartmontools, nvme-cli, htop, ethtool, vim]

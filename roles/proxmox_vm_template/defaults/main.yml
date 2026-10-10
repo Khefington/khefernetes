@@ -1,0 +1,3 @@
+---
+proxmox_vm_template_cores: 2
+proxmox_vm_template_memory_mb: 2048

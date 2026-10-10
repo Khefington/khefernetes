@@ -1,0 +1,10 @@
+---
+- name: Remove the temporary exclude lists
+  ansible.builtin.file:
+    path: "{{ media_import_tmp_dir }}/khefernetes-{{ item.library }}-dangling.exclude"
+    state: absent
+  delegate_to: localhost
+  become: false
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.library }}"

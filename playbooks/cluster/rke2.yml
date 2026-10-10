@@ -1,0 +1,36 @@
+---
+# Install RKE2 (control plane first, then workers).
+#   ansible-playbook playbooks/cluster/rke2.yml
+# Needs vault_rke2_token in the vault and rke2_version in group_vars/all/versions.yml.
+- name: RKE2 control plane
+  hosts: anvil_control_planes
+  gather_facts: false
+  serial: 1 # one server at a time (matters once you add more)
+  roles:
+    - rke2
+
+- name: RKE2 workers
+  hosts: anvil_workers
+  gather_facts: false
+  roles:
+    - rke2
+
+- name: Verify the cluster
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Wait until every node has joined and is Ready
+      ansible.builtin.command: "{{ kubectl_cmd }} get nodes --no-headers"
+      register: cluster_nodes
+      changed_when: false
+      check_mode: false
+      retries: 30
+      delay: 10
+      until:
+        - cluster_nodes.rc == 0
+        - cluster_nodes.stdout_lines | length == groups['anvil_cluster'] | length
+        - cluster_nodes.stdout_lines | select('search', ' Ready ') | list | length == groups['anvil_cluster'] | length
+
+    - name: Show the nodes
+      ansible.builtin.debug:
+        var: cluster_nodes.stdout_lines

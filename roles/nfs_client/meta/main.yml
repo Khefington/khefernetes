@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: nfs_client
+  author: khefernetes
+  description: "NFS client tools on the cluster VMs, plus a real mount/ownership/hardlink test per export"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

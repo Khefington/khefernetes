@@ -1,0 +1,119 @@
+---
+# Read-only health check for trickplay / file-access problems. Changes nothing (the write tests create
+# and delete their own scratch files). Run:  make diagnose-jellyfin
+- name: Pod status, restarts, and why the last container stopped (OOMKilled would be shown here)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} get pod -l app=jellyfin
+    -o jsonpath='{range .items[*]}{.metadata.name}{"  node="}{.spec.nodeName}{"  restarts="}{.status.containerStatuses[0].restartCount}{"  lastStopReason="}{.status.containerStatuses[0].lastState.terminated.reason}{"\n"}{end}'
+  register: jellyfin_pod
+  changed_when: false
+  check_mode: false
+
+- name: Check inside the running container, as the user Jellyfin runs as
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec -i deploy/jellyfin -- sh -s <<'SCRIPT'
+    echo "== identity (expect uid={{ media_uid }} gid={{ media_gid }})"
+    id
+    echo
+    echo "== directories Jellyfin must be able to write"
+    mkdir -p /tmp/jellyfin 2>/dev/null
+    for d in /config /config/data /config/data/trickplay /config/data/metadata /cache /tmp /tmp/jellyfin; do
+      if [ -d "$d" ]; then
+        if t=$(mktemp "$d/.khefernetes-XXXXXX" 2>&1); then
+          rm -f "$t"; echo "PASS  $d is writable (owner $(stat -c '%u:%g mode %a' "$d"))"
+        else
+          echo "FAIL  $d is NOT writable: $t"
+        fi
+      else
+        echo "----  $d does not exist yet (Jellyfin creates it on first use)"
+      fi
+    done
+    echo
+    echo "== free space"
+    df -h /config /config/data/trickplay /cache /tmp /media 2>&1
+    echo
+    echo "== the library must be read-only (the test below is EXPECTED to fail)"
+    if touch /media/.khefernetes-ro-test 2>/dev/null; then rm -f /media/.khefernetes-ro-test; echo "WARN  /media is writable"; else echo "OK    /media is read-only, as designed"; fi
+    echo
+    echo "== can ffmpeg read a real file from each library and write thumbnails (what trickplay does)?"
+    FF=/usr/lib/jellyfin-ffmpeg/ffmpeg
+    [ -x "$FF" ] || FF=$(command -v ffmpeg || true)
+    echo "ffmpeg: $FF"
+    "$FF" -version 2>&1 | head -n 1
+    for lib in /media/*/; do
+      lib=${lib%/}
+      f=$(find "$lib" -type f \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.avi' -o -iname '*.m4v' -o -iname '*.mov' \) 2>/dev/null | head -n 1)
+      if [ -z "$f" ]; then echo "----  $lib: no video files (fine for music/books)"; continue; fi
+      if ! head -c 4096 "$f" >/dev/null 2>&1; then echo "FAIL  $lib: cannot READ $f"; ls -ln "$f"; continue; fi
+      w=/tmp/jellyfin/khefernetes-diag; rm -rf "$w"; mkdir -p "$w"
+      if "$FF" -nostdin -v error -ss 5 -t 40 -i "file:$f" -vf "fps=1/10,scale=320:-2" "$w/%08d.jpg" 2>"$w/err.txt"; then
+        n=$(ls "$w"/*.jpg 2>/dev/null | wc -l)
+        if [ "$n" -gt 0 ]; then echo "PASS  $lib: ffmpeg made $n thumbnails from $f"; else echo "FAIL  $lib: ffmpeg ran but produced no images ($f)"; fi
+      else
+        echo "FAIL  $lib: ffmpeg error on $f"; head -n 5 "$w/err.txt"
+      fi
+      rm -rf "$w"
+    done
+    echo
+    echo "== files or folders in the library this user cannot read (should be empty)"
+    timeout 120 find /media ! -readable 2>/dev/null | head -n 20
+    echo
+    echo "== the actual trickplay errors in Jellyfin's own log (newest files first)"
+    logs=$(ls -t /config/log/*.log 2>/dev/null | head -n 3)
+    if [ -z "$logs" ]; then echo "no log files found under /config/log"; else
+      grep -h -A14 -e 'Error creating trickplay' -e 'Error while saving trickplay' -e 'Unable to clear trickplay' -e 'Media not found at' $logs | tail -n 60
+    fi
+    SCRIPT
+  args:
+    executable: /bin/bash
+  register: jellyfin_checks
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Show the pod status
+  ansible.builtin.debug:
+    var: jellyfin_pod.stdout_lines
+
+- name: Show the in-container checks
+  ansible.builtin.debug:
+    var: jellyfin_checks.stdout_lines
+
+- name: Read the library settings from Jellyfin's API
+  when: vault_jellyfin_api_key is defined
+  block:
+    - name: Find Jellyfin
+      ansible.builtin.import_tasks: api_endpoint.yml
+
+    - name: Ask for the library list
+      ansible.builtin.uri:
+        url: "{{ jellyfin_api_url }}/Library/VirtualFolders"
+        headers:
+          Authorization: 'MediaBrowser Token="{{ vault_jellyfin_api_key }}"'
+        return_content: true
+      register: jellyfin_libs
+      no_log: true
+      changed_when: false
+      check_mode: false
+
+    - name: Trickplay settings per library
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.Name }}: extract={{ item.LibraryOptions.EnableTrickplayImageExtraction | default('?') }},
+          extract during scan={{ item.LibraryOptions.ExtractTrickplayImagesDuringLibraryScan | default('?') }},
+          SAVE NEXT TO MEDIA={{ item.LibraryOptions.SaveTrickplayWithMedia | default('?') }}
+      loop: "{{ jellyfin_libs.json }}"
+      loop_control:
+        label: "{{ item.Name }}"
+
+    - name: Warn about the setting that cannot work on a read-only library
+      ansible.builtin.debug:
+        msg: >-
+          Library '{{ item.Name }}' has "Save trickplay images next to media" ON. The library is mounted read-only,
+          so every write fails. Trickplay is stored on the HDD instead (the 2TB SSD, mounted at /config/data/trickplay).
+          Turn it off: Dashboard > Libraries > {{ item.Name }} > uncheck it,
+          then Dashboard > Scheduled Tasks > "Generate Trickplay Images" > run.
+      loop: "{{ jellyfin_libs.json | selectattr('LibraryOptions.SaveTrickplayWithMedia', 'equalto', true) | list }}"
+      loop_control:
+        label: "{{ item.Name }}"

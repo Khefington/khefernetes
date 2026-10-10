@@ -1,0 +1,10 @@
+---
+# Turn the empty 2TB SSD into an ext4 filesystem mounted at /mnt/staging on castellan.
+#   1) Look first (changes nothing, shows the disk it found):
+#        ansible-playbook playbooks/proxmox/staging_disk.yml
+#   2) Format + mount (DESTROYS everything on staging_disk_device):
+#        ansible-playbook playbooks/proxmox/staging_disk.yml -e staging_disk_prepare=true
+- name: Prepare the 2TB SSD as staging storage
+  hosts: proxmox
+  roles:
+    - proxmox_staging_disk

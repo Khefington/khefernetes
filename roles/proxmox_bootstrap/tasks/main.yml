@@ -1,0 +1,57 @@
+---
+- name: Remove paid (enterprise) repositories
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/{{ item }}"
+    state: absent
+  loop:
+    - pve-enterprise.list
+    - ceph.list
+
+- name: Add the free Proxmox repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/pve-no-subscription.list
+    content: |
+      deb http://download.proxmox.com/debian/pve {{ proxmox_debian_suite }} pve-no-subscription
+    mode: "0644"
+
+- name: Install sudo
+  ansible.builtin.apt:
+    name: sudo
+    state: present
+    update_cache: true
+
+- name: Create the automation user
+  ansible.builtin.user:
+    name: "{{ proxmox_bootstrap_user }}"
+    shell: /bin/bash
+    create_home: true # without this there is no ~/.ssh to hold your key
+    password_lock: true # no password login; the SSH key is the only way in
+
+- name: Authorize your SSH key
+  ansible.posix.authorized_key:
+    user: "{{ proxmox_bootstrap_user }}"
+    key: "{{ lookup('ansible.builtin.file', admin_ssh_public_key_file) }}"
+    state: present
+
+- name: Allow passwordless sudo for the automation user
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ proxmox_bootstrap_user }}"
+    content: "{{ proxmox_bootstrap_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Install debug tools
+  ansible.builtin.apt:
+    name: "{{ proxmox_bootstrap_tools }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Set the host timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist
+  tags: [upgrade]

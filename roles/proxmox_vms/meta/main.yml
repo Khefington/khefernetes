@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: proxmox_vms
+  author: khefernetes
+  description: "Clone the cloud-init template into the cluster VMs and wait for first boot"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

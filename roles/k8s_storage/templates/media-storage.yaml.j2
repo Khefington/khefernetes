@@ -1,0 +1,91 @@
+# Managed by Ansible (khefernetes). Edit the template, not the cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ media_namespace }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-data
+spec:
+  capacity:
+    storage: {{ k8s_storage_data_capacity }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain   # deleting the claim NEVER deletes the files
+  storageClassName: nfs-static            # a label that ties this PV to its claim; no real class exists
+  mountOptions: [nfsvers=4.2, hard, noatime]
+  nfs:
+    server: {{ k8s_storage_nfs_server_ip }}
+    path: {{ k8s_storage_data_export_path }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-data
+  namespace: {{ media_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-static
+  volumeName: media-data
+  resources:
+    requests:
+      storage: {{ k8s_storage_data_capacity }}
+---
+# The 2TB SSD: staging drive for in-progress downloads
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-incomplete
+spec:
+  capacity:
+    storage: {{ k8s_storage_staging_capacity }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-static
+  mountOptions: [nfsvers=4.2, hard, noatime]
+  nfs:
+    server: {{ k8s_storage_nfs_server_ip }}
+    path: {{ k8s_storage_staging_export_path }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-incomplete
+  namespace: {{ media_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-static
+  volumeName: media-incomplete
+  resources:
+    requests:
+      storage: {{ k8s_storage_staging_capacity }}
+---
+# The 2TB SSD: app files (Jellyfin trickplay). Survives a cluster rebuild.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: media-appdata
+spec:
+  capacity:
+    storage: {{ k8s_storage_appdata_capacity }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-static
+  mountOptions: [nfsvers=4.2, hard, noatime]
+  nfs:
+    server: {{ k8s_storage_nfs_server_ip }}
+    path: {{ k8s_storage_appdata_export_path }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: media-appdata
+  namespace: {{ media_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-static
+  volumeName: media-appdata
+  resources:
+    requests:
+      storage: {{ k8s_storage_appdata_capacity }}

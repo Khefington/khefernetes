@@ -1,0 +1,2 @@
+---
+nfs_client_mount_options: rw,nfsvers=4.2

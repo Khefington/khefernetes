@@ -1,0 +1,12 @@
+---
+# Read-only health check for Jellyfin file access and trickplay: write tests as Jellyfin's own user,
+# an ffmpeg thumbnail test on a real file from each library, library settings, and the log excerpt.
+#   ansible-playbook playbooks/operations/diagnose_jellyfin.yml
+- name: Diagnose Jellyfin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Run the checks
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: diagnose.yml

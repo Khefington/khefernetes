@@ -1,0 +1,31 @@
+---
+# Runs on the Proxmox host. Publishes (as host facts on castellan):
+#   media_hdd_path      mount point of the HDD storage
+#   media_data_path     <hdd>/<data_export_subdir>   (the export that holds media/ and downloads/)
+#   media_staging_path  <staging mount>/incomplete   (the SSD export for in-progress downloads)
+#   media_appdata_path  <staging mount>/appdata      (the SSD export for app files such as trickplay)
+# Other plays read them as hostvars['castellan'].media_data_path.
+- name: Ask Proxmox where the media HDD storage lives
+  ansible.builtin.command: pvesh get /storage/{{ media_hdd_storage_id }} --output-format json
+  register: storage_paths_cfg
+  changed_when: false
+  check_mode: false
+
+- name: Publish the paths
+  ansible.builtin.set_fact:
+    media_hdd_path: "{{ (storage_paths_cfg.stdout | from_json).path }}"
+    media_data_path: "{{ (storage_paths_cfg.stdout | from_json).path }}/{{ data_export_subdir }}"
+    media_staging_path: "{{ staging_mount_path }}/incomplete"
+    media_appdata_path: "{{ staging_mount_path }}/appdata"
+
+- name: Make sure the HDD is really mounted
+  ansible.builtin.command: mountpoint -q {{ media_hdd_path }}
+  changed_when: false
+  check_mode: false
+  when: storage_paths_require_hdd_mounted | bool
+
+- name: Make sure the staging SSD is really mounted
+  ansible.builtin.command: mountpoint -q {{ staging_mount_path }}
+  changed_when: false
+  check_mode: false
+  when: storage_paths_require_staging_mounted | bool

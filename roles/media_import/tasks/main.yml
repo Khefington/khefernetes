@@ -1,0 +1,67 @@
+---
+# Copy media from the Windows PC onto the HDD. Safe to re-run: only new or changed files move.
+# Never deletes anything at the destination.
+- name: Work out what to copy
+  ansible.builtin.import_tasks: plan.yml
+
+- name: Check the Windows side (rsync, source folders)
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Show free space on the HDD
+  ansible.builtin.command: df -h --output=avail,pcent {{ media_hdd_path }}
+  register: media_import_df
+  changed_when: false
+  check_mode: false
+
+- name: Free space
+  ansible.builtin.debug:
+    var: media_import_df.stdout_lines
+
+- name: Make sure the destination folders exist
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: directory
+    owner: "{{ media_uid }}"
+    group: "{{ media_gid }}"
+    mode: "2775"
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Copy
+  ansible.posix.synchronize:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    archive: false
+    recursive: true
+    times: true
+    perms: true
+    owner: true
+    group: true
+    links: false
+    copy_links: "{{ media_import_follow_symlinks | bool }}"
+    partial: true # keep half-copied files so an interrupted copy resumes
+    use_ssh_args: true
+    rsync_opts: >-
+      {{ ['--itemize-changes', '--human-readable', '--chown=' ~ media_uid ~ ':' ~ media_gid, '--chmod=D2775,F664']
+         + media_import_excludes + media_import_hardlink_opts
+         + (['--exclude-from=' ~ media_import_tmp_dir ~ '/khefernetes-' ~ item.library ~ '-dangling.exclude'] if media_import_follow_symlinks | bool else []) }}
+  become: true
+  register: media_import_copy
+  loop: "{{ media_import_plan }}"
+  loop_control:
+    label: "{{ item.src }} -> {{ item.dest }}"
+
+- name: What was transferred
+  ansible.builtin.debug:
+    msg: "{{ item.item.library }}: {{ item.stdout_lines | default([]) | select('match', '^[<>c]f') | list | length }} file(s) copied or updated"
+  loop: "{{ media_import_copy.results }}"
+  loop_control:
+    label: "{{ item.item.library }}"
+
+- name: Clean up
+  ansible.builtin.import_tasks: cleanup.yml
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: "Run playbooks/operations/audit_media.yml (make audit-media) to prove nothing is missing."

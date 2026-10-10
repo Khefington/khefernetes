@@ -1,0 +1,64 @@
+---
+- name: Look for an authorized key for the account we connected as
+  ansible.builtin.stat:
+    path: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+  register: hardening_authorized_keys
+
+- name: Stop if key login is not set up
+  ansible.builtin.assert:
+    that:
+      - hardening_authorized_keys.stat.exists
+      - hardening_authorized_keys.stat.size > 0
+    fail_msg: >-
+      No SSH key found for {{ ansible_user }}. Disabling passwords now could lock you out.
+
+- name: Install the hardening drop-in, and undo it if sshd rejects it
+  block:
+    - name: Write the drop-in file
+      ansible.builtin.copy:
+        dest: "{{ proxmox_hardening_sshd_dropin }}"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible. Manual edits will be overwritten.
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin prohibit-password
+          PubkeyAuthentication yes
+      notify: Reload sshd
+
+    - name: Have sshd test the complete configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+  rescue:
+    - name: Remove the rejected drop-in
+      ansible.builtin.file:
+        path: "{{ proxmox_hardening_sshd_dropin }}"
+        state: absent
+    - name: Abort without touching the running service
+      ansible.builtin.fail:
+        msg: sshd rejected the new configuration. The drop-in was removed and nothing was reloaded.
+
+- name: Apply the change now, before verifying it
+  ansible.builtin.meta: flush_handlers
+
+- name: Open a fresh connection to prove key login still works
+  ansible.builtin.meta: reset_connection
+
+- name: Confirm key login still works
+  ansible.builtin.ping:
+
+- name: Confirm the server no longer offers passwords
+  ansible.builtin.command: >-
+    ssh -o BatchMode=yes -o PubkeyAuthentication=no
+    -o PreferredAuthentications=password,keyboard-interactive
+    -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new
+    {{ item }}@{{ ansible_host }} true
+  loop: [root, "{{ ansible_user }}"]
+  register: hardening_password_probe
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  failed_when: "'Permission denied (publickey)' not in hardening_password_probe.stderr"
+  when: not ansible_check_mode

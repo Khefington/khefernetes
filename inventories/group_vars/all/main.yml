@@ -1,0 +1,20 @@
+---
+# Values that more than one group needs.
+
+# --- Network ---
+lan_subnet_cidr_prefix: 24
+lan_gateway: 192.168.1.1
+lan_dns_servers:
+  - 192.168.1.1
+  - 8.8.8.8
+lan_domain: home.lan
+# Reserved for MetalLB. Must be OUTSIDE the router's DHCP pool.
+metallb_range: 192.168.1.200-192.168.1.220
+
+# --- Locale ---
+timezone: America/Chicago
+
+# --- Access ---
+# Public key that is authorised on the Proxmox host and injected into every VM (cloud-init).
+admin_ssh_public_key_file: "~/.ssh/id_ed25519.pub"
+ansible_become_password: "{{ vault_ansible_become_password }}"

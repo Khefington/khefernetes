@@ -1,7 +1,19 @@
+# --- secrets: never commit ---
 .vault_pass
 .secrets/
-inventories/cluster/group_vars/all/vault.yml
-*.retry
-.venv/
+*.pem
+*.key
 kubeconfig*
-collections
+# The encrypted vault is ignored on purpose (see docs/secrets.md for the trade-off).
+inventories/group_vars/**/vault.yml
+
+# --- local tooling ---
+.venv/
+collections/
+*.retry
+.ansible/
+__pycache__/
+
+# leftovers from scripts/migrate-from-cluster-layout.sh until you delete them
+_old_layout/
+.vault.migrating.*

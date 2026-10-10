@@ -1,0 +1,8 @@
+---
+# TEMPLATE ONLY. The real file is vault.yml (same folder), encrypted with:
+#   ansible-vault create inventories/group_vars/all/vault.yml
+# Values below are placeholders; never put real secrets in this file.
+vault_ansible_become_password: "changeme"
+vault_proxmox_api_token_secret: "changeme"
+vault_rke2_token: "changeme-long-random-string"
+vault_jellyfin_api_key: "changeme"

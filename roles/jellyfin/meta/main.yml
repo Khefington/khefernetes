@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: jellyfin
+  author: khefernetes
+  description: "Deploy Jellyfin into Kubernetes (config on node-local storage, library read-only over NFS) plus diagnostics"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

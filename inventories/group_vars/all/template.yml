@@ -1,0 +1,5 @@
+---
+# The cloud-init VM template. Used by the playbook that builds it (runs on castellan) and by the one
+# that clones it (runs on the cluster VMs), so it lives in group_vars/all.
+template_vmid: 9000
+template_name: "khefernetes-ubuntu-{{ ubuntu_release }}-cloudinit"

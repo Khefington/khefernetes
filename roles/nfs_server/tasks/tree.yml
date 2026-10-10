@@ -1,0 +1,26 @@
+---
+# The library folder tree. Numeric owner on purpose: works even before the 'media' user exists.
+# Standalone: other playbooks import it with tasks_from: tree (needs the storage_paths facts).
+#
+#   data/media/<library>/        what Jellyfin and friends read
+#   data/downloads/<library>/    finished downloads per category (same filesystem => hardlinks work)
+#   data/backups/...             application backups
+#   staging/incomplete/          SSD, in-progress downloads
+#   staging/appdata/...          SSD, app files such as Jellyfin trickplay (survive a rebuild)
+- name: Build the list of folders
+  ansible.builtin.set_fact:
+    nfs_server_dirs: >-
+      {{ [media_data_path, media_data_path ~ '/media', media_data_path ~ '/downloads', media_staging_path, media_appdata_path]
+         + (media_libraries | map('regex_replace', '^', media_data_path ~ '/media/') | list)
+         + (media_libraries | map('regex_replace', '^', media_data_path ~ '/downloads/') | list)
+         + (nfs_server_extra_dirs | map('regex_replace', '^', media_data_path ~ '/') | list)
+         + (nfs_server_appdata_dirs | map('regex_replace', '^', media_appdata_path ~ '/') | list) }}
+
+- name: Create the folders (setgid, so new files inherit the 'media' group)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ media_uid }}"
+    group: "{{ media_gid }}"
+    mode: "2775"
+  loop: "{{ nfs_server_dirs }}"

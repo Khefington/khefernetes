@@ -1,0 +1,21 @@
+---
+# Deploy Jellyfin into the 'media' namespace (needs playbooks/storage/nfs.yml and kubernetes.yml to have run).
+#   ansible-playbook playbooks/apps/jellyfin.yml
+# Applications are applied with 'kubectl apply' so any error shows up here in the playbook.
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: Make sure the HDD and SSD folders exist (library, backups, trickplay)
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Create the folder tree
+      ansible.builtin.import_role:
+        name: nfs_server
+        tasks_from: tree.yml
+
+- name: Deploy Jellyfin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - jellyfin

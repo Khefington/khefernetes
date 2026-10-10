@@ -1,0 +1,18 @@
+---
+# Repairs "one level too deep" folders (media/movies/Movies/<titles> -> media/movies/<titles>).
+# Reports only, unless you pass -e media_import_apply_flatten=true. Moves are instant renames.
+#   ansible-playbook playbooks/operations/flatten_media.yml
+#   ansible-playbook playbooks/operations/flatten_media.yml -e media_import_apply_flatten=true
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+  vars:
+    storage_paths_require_staging_mounted: false
+
+- name: Flatten nested library folders
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Look for nested folders
+      ansible.builtin.import_role:
+        name: media_import
+        tasks_from: flatten.yml

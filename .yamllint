@@ -1,0 +1,25 @@
+---
+extends: default
+ignore: |
+  .venv/
+  collections/
+  _old_layout/
+  .github/
+  inventories/group_vars/all/vault.yml
+rules:
+  line-length:
+    max: 260
+    level: warning
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 1
+  document-start: enable
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

@@ -1,0 +1,18 @@
+---
+# Jellyfin cannot see files added over NFS by another machine (no filesystem events),
+# so after an import we ask it to rescan its libraries. Skipped when no API key is in the vault.
+- name: Ask Jellyfin to rescan
+  when: vault_jellyfin_api_key is defined
+  block:
+    - name: Find Jellyfin
+      ansible.builtin.import_tasks: api_endpoint.yml
+
+    - name: Ask Jellyfin to scan all libraries (runs in the background)
+      ansible.builtin.uri:
+        url: "{{ jellyfin_api_url }}/Library/Refresh"
+        method: POST
+        headers:
+          Authorization: 'MediaBrowser Token="{{ vault_jellyfin_api_key }}"'
+        status_code: [200, 204]
+      no_log: true
+      changed_when: true

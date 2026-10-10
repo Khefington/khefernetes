@@ -1,0 +1,25 @@
+---
+# Share storage from castellan to the cluster VMs over NFS, then prove each VM can use it.
+#   ansible-playbook playbooks/proxmox/staging_disk.yml -e staging_disk_prepare=true   (once)
+#   ansible-playbook playbooks/storage/nfs.yml
+#
+# Two exports:
+#   <hdd>/data          media/<library>, downloads/<library>, backups/  (ONE export so hardlinks work)
+#   /mnt/staging/incomplete                                             (2TB SSD: in-progress downloads)
+# Libraries come from media_libraries (inventories/group_vars/all/media.yml).
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: NFS server on the Proxmox host
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - nfs_server
+
+- name: NFS clients on the cluster VMs, with real mount tests
+  hosts: anvil_cluster
+  gather_facts: false
+  vars:
+    nfs_client_exports: "{{ hostvars[groups['proxmox'][0]].nfs_export_list }}"
+  roles:
+    - nfs_client

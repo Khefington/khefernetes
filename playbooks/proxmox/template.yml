@@ -1,0 +1,17 @@
+---
+# Build the Ubuntu cloud-init VM template (ID from template_vmid) on castellan.
+#   ansible-playbook playbooks/proxmox/template.yml
+#   ansible castellan -m command -a "qm config 9000"   # expect template: 1, a scsi0 disk, an ide2 cloud-init drive
+# The API token needs the privileges listed in docs/architecture.md.
+- name: Build the Ubuntu cloud-init template
+  hosts: proxmox
+  module_defaults:
+    community.proxmox.proxmox_kvm:
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_user }}"
+      api_token_id: "{{ proxmox_api_token_id }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: "{{ proxmox_api_validate_certs }}"
+      node: "{{ proxmox_node }}"
+  roles:
+    - proxmox_vm_template

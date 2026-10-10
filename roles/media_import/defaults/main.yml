@@ -1,0 +1,34 @@
+---
+# Windows leftovers that must never reach the library. '?' stands for a space (rsync glob).
+media_transfer_excludes:
+  - Thumbs.db
+  - desktop.ini
+  - "$RECYCLE.BIN"
+  - System?Volume?Information
+  - "*.tmp"
+
+# Windows symlinks and junctions show up in WSL as symlinks.
+#   true  = copy what they point to (nothing is silently skipped)
+#   false = skip them (the audit lists how many there are)
+media_import_follow_symlinks: true
+
+# true = recreate NTFS hardlinks as hardlinks at the destination (saves space).
+# Off by default: over WSL's Windows-drive mount, inode numbers are not guaranteed unique, and a
+# false match would link two DIFFERENT files. Copying both names costs space, never correctness.
+media_import_preserve_hardlinks: false
+
+# Audit: also compare file contents (reads every byte on both sides; slow on a big library).
+media_import_checksum: false
+# Audit: fail the playbook when anything is missing or nested, so scripts and CI notice.
+media_import_fail_on_problems: true
+# Audit: how many missing file names to print per library.
+media_import_list_limit: 25
+
+# Flatten: nothing is moved unless this is true (otherwise it only reports what it would do).
+media_import_apply_flatten: false
+
+# Where small temporary files (the per-library exclude lists) are written on the machine running Ansible.
+media_import_tmp_dir: /tmp
+
+media_import_excludes: "{{ media_transfer_excludes | map('regex_replace', '^', '--exclude=') | list }}"
+media_import_hardlink_opts: "{{ ['--hard-links'] if media_import_preserve_hardlinks | bool else [] }}"

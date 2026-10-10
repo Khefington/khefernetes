@@ -21,12 +21,13 @@
     dest: /usr/local/share/rke2-install.sh
     mode: "0755"
 
-- name: Install RKE2 {{ rke2_version }} ({{ rke2_type }})
+- name: Install RKE2 (the version is rke2_version, the type follows the inventory group)
   ansible.builtin.command: /usr/local/share/rke2-install.sh
   environment:
     INSTALL_RKE2_VERSION: "{{ rke2_version }}"
     INSTALL_RKE2_TYPE: "{{ rke2_type }}"
   when: rke2_version not in rke2_installed.stdout
+  changed_when: true
   notify: Restart rke2
 
 # 3. Configuration RKE2

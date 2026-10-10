@@ -1,0 +1,17 @@
+---
+# Read-only: proves every file in the Windows source folders is on the HDD, or lists what is not.
+#   ansible-playbook playbooks/operations/audit_media.yml
+#   ansible-playbook playbooks/operations/audit_media.yml -e media_import_checksum=true   (also compare contents; slow)
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+  vars:
+    storage_paths_require_staging_mounted: false
+
+- name: Audit the imported media
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Compare source and destination
+      ansible.builtin.import_role:
+        name: media_import
+        tasks_from: audit.yml

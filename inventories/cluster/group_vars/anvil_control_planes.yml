@@ -1,3 +1,0 @@
----
-# Vars specific to this group
-group_vars_group_precedence_for_anvil_example_file: true

@@ -1,0 +1,12 @@
+---
+nfs_server_export_options: "rw,sync,no_subtree_check,all_squash,anonuid={{ media_uid }},anongid={{ media_gid }}"
+# Only these hosts may mount the shares.
+nfs_server_client_ips: "{{ groups['anvil_cluster'] | map('extract', hostvars, 'ansible_host') | list }}"
+# Folders created next to media/ and downloads/ (not libraries).
+nfs_server_extra_dirs:
+  - backups
+  - backups/jellyfin
+# Folders created inside the SSD's appdata export.
+nfs_server_appdata_dirs:
+  - jellyfin
+  - "{{ jellyfin_trickplay_subpath }}"

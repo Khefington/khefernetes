@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: media_import
+  author: khefernetes
+  description: "Copy media from the Windows PC (via WSL) onto the HDD, audit completeness, and repair nested folders"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

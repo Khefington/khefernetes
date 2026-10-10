@@ -1,0 +1,105 @@
+# Managed by Ansible (khefernetes). Contains a secret: keep this file mode 0600.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jellyfin-api
+  namespace: {{ media_namespace }}
+type: Opaque
+stringData:
+  api-key: "{{ vault_jellyfin_api_key }}"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jellyfin-backup
+  namespace: {{ media_namespace }}
+spec:
+  schedule: "{{ jellyfin_backup_schedule }}"
+  timeZone: {{ timezone }}
+  concurrencyPolicy: Forbid           # never two backups at once
+  startingDeadlineSeconds: 3600       # if the cluster was down at 03:15, still run within the hour
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 604800   # tidy finished jobs after a week
+      template:
+        metadata:
+          labels:
+            app: jellyfin-backup
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_gid }}
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              # Same pinned image as Jellyfin itself: already on the node and it ships curl.
+              image: docker.io/jellyfin/jellyfin:{{ jellyfin_version }}
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  echo "1/4 Asking Jellyfin to create a consistent backup (database only)..."
+                  curl -fsS --max-time 900 -X POST \
+                    -H "Authorization: MediaBrowser Token=\"${JELLYFIN_API_KEY}\"" \
+                    -H "Content-Type: application/json" \
+                    -d '{"Database":true,"Metadata":false,"Trickplay":false,"Subtitles":false}' \
+                    http://jellyfin.{{ media_namespace }}.svc.cluster.local:8096/Backup/Create
+                  echo
+                  echo "2/4 Moving the new backup file(s) to the NFS share..."
+                  found=0
+                  for f in /config/data/backups/*.zip; do
+                    [ -e "$f" ] || continue
+                    found=1
+                    b=$(basename "$f")
+                    cp "$f" "/dest/$b.partial"
+                    [ "$(stat -c %s "$f")" = "$(stat -c %s "/dest/$b.partial")" ] || { echo "size mismatch on $b"; exit 1; }
+                    mv "/dest/$b.partial" "/dest/$b"
+                    rm -f "$f"
+                    echo "  saved $b"
+                  done
+                  [ "$found" = 1 ] || { echo "No backup file was produced"; exit 1; }
+                  echo "3/4 Saving the settings folders (small XML files and library definitions)..."
+                  ts=$(date +%Y%m%d-%H%M%S)
+                  dirs=""
+                  for d in config root; do [ -d "/config/$d" ] && dirs="$dirs $d"; done
+                  if [ -n "$dirs" ]; then
+                    tar czf "/dest/jellyfin-settings-$ts.tgz.partial" -C /config $dirs
+                    mv "/dest/jellyfin-settings-$ts.tgz.partial" "/dest/jellyfin-settings-$ts.tgz"
+                    echo "  saved jellyfin-settings-$ts.tgz"
+                  fi
+                  echo "4/4 Keeping the newest {{ jellyfin_backup_keep }} of each kind..."
+                  for pat in '*.zip' 'jellyfin-settings-*.tgz'; do
+                    ls -1t /dest/$pat 2>/dev/null | tail -n +$(( {{ jellyfin_backup_keep }} + 1 )) | while read -r old; do echo "  removing $old"; rm -f "$old"; done
+                  done
+                  echo "Done."
+              env:
+                - name: JELLYFIN_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: jellyfin-api
+                      key: api-key
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {memory: 256Mi}
+              volumeMounts:
+                - {name: config, mountPath: /config}      # Jellyfin's config volume (only backups/ and two small folders are touched)
+                - name: backups
+                  mountPath: /dest
+                  subPath: backups/jellyfin                # on the HDD, outside the media library Jellyfin can see
+          volumes:
+            - name: config
+              persistentVolumeClaim:
+                claimName: jellyfin-config
+            - name: backups
+              persistentVolumeClaim:
+                claimName: media-data

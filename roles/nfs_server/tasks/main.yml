@@ -1,0 +1,57 @@
+---
+# Needs the storage_paths role to have run first (it publishes media_data_path and friends).
+- name: Install the NFS server
+  ansible.builtin.apt:
+    name: nfs-kernel-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the 'media' group
+  ansible.builtin.group:
+    name: media
+    gid: "{{ media_gid }}"
+    system: true
+
+- name: Create the 'media' user (owns every file in the library; cannot log in)
+  ansible.builtin.user:
+    name: media
+    uid: "{{ media_uid }}"
+    group: media
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create the folder tree
+  ansible.builtin.import_tasks: tree.yml
+
+- name: Make sure /etc/exports.d exists
+  ansible.builtin.file:
+    path: /etc/exports.d
+    state: directory
+    mode: "0755"
+
+- name: Export both trees to the cluster VMs only
+  ansible.builtin.copy:
+    dest: /etc/exports.d/khefernetes.exports
+    mode: "0644"
+    content: |
+      # Managed by Ansible (khefernetes). Only the cluster VMs may mount these.
+      {% for path in [media_data_path, media_staging_path, media_appdata_path] %}
+      {{ path }} {% for ip in nfs_server_client_ips %}{{ ip }}({{ nfs_server_export_options }}){{ ' ' if not loop.last }}{% endfor %}
+
+      {% endfor %}
+  notify: Re-export NFS shares
+
+- name: Enable and start the NFS server
+  ansible.builtin.systemd:
+    name: nfs-server
+    enabled: true
+    state: started
+
+- name: Remember the exports for the client play
+  ansible.builtin.set_fact:
+    nfs_export_list:
+      - { path: "{{ media_data_path }}", hardlink_test: true }
+      - { path: "{{ media_staging_path }}", hardlink_test: false }
+      - { path: "{{ media_appdata_path }}", hardlink_test: false }

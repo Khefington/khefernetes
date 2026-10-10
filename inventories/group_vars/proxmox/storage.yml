@@ -1,0 +1,15 @@
+---
+# Physical storage on castellan.
+#   local / local-lvm : 1TB SSD (Proxmox OS, templates, VM disks)
+#   castellan-hdd1    : 4TB HDD (the media library; created by hand, never formatted here)
+#   /mnt/staging      : 2TB SSD (in-progress downloads; formatted by proxmox/staging_disk.yml)
+
+# 2TB SSD: staging for in-progress downloads (plain ext4)
+staging_disk_device: /dev/nvme1n1 # CHECK with: lsblk -f  (must be the empty 2TB disk)
+staging_disk_prepare: false # safety switch: formatting only happens with -e staging_disk_prepare=true
+staging_mount_path: /mnt/staging
+staging_label: staging
+
+# NFS: what is shared with the cluster
+media_hdd_storage_id: castellan-hdd1 # the Proxmox storage ID of the 4TB HDD
+data_export_subdir: data # <hdd>/data holds media/ and downloads/ (ONE export, so hardlinks work)

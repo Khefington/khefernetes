@@ -1,0 +1,12 @@
+---
+# Media to copy from the Windows PC (via WSL) onto the HDD with playbooks/operations/import_media.yml.
+#   src:      folder as seen from WSL (C: is /mnt/c). A trailing slash does not matter; it is normalised.
+#   library:  must be one of media_libraries. The files end up in data/media/<library>/
+#
+# Optional tuning (defaults live in roles/media_import/defaults/main.yml):
+#   media_transfer_excludes, media_import_follow_symlinks, media_import_preserve_hardlinks
+media_transfers:
+  - { src: "/mnt/c/Users/konno/Videos/Movies", library: movies }
+  - { src: "/mnt/c/Users/konno/Videos/TV", library: tv }
+  - { src: "/mnt/c/Users/konno/Videos/Books", library: books }
+  # - { src: "/mnt/d/Music", library: music }

@@ -1,0 +1,3 @@
+---
+proxmox_vms_clone_timeout: 600
+proxmox_vms_ssh_wait_seconds: 300

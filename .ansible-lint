@@ -1,0 +1,15 @@
+---
+profile: production
+exclude_paths:
+  - .venv/
+  - collections/
+  - _old_layout/
+  - .github/
+  - inventories/group_vars/all/vault.yml
+skip_list:
+  - yaml[line-length]
+  # Roles here deliberately share inventory-level names (media_uid, media_data_path, staging_*)
+  # instead of prefixing every variable with the role name.
+  - var-naming[no-role-prefix]
+warn_list:
+  - experimental

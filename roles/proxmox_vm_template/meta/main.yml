@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: proxmox_vm_template
+  author: khefernetes
+  description: "Build the Ubuntu cloud-init VM template on Proxmox (image over SSH, VM objects over the API)"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

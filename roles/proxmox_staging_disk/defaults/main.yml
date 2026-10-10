@@ -1,0 +1,8 @@
+---
+# staging_disk_device has no default on purpose: choosing a disk to format must be explicit (inventory).
+staging_disk_prepare: false # formatting only happens with -e staging_disk_prepare=true
+staging_mount_path: /mnt/staging
+staging_label: staging
+# Sanity window for "this is the 2TB disk" (bytes).
+proxmox_staging_disk_min_bytes: 1500000000000
+proxmox_staging_disk_max_bytes: 2500000000000

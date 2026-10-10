@@ -1,0 +1,5 @@
+---
+# Refuse to continue if the disks are not really mounted. Without this check, creating folders
+# would silently fill the 1TB system SSD instead.
+storage_paths_require_hdd_mounted: true
+storage_paths_require_staging_mounted: true

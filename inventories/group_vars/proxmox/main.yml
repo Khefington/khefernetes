@@ -1,0 +1,3 @@
+---
+# Proxmox-host-only settings.
+proxmox_debian_suite: bookworm

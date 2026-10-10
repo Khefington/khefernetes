@@ -1,0 +1,10 @@
+---
+# First-time setup of the Proxmox host. Connects as root (the automation user does not exist yet).
+#   ansible-playbook playbooks/proxmox/bootstrap.yml -k      (root password prompt)
+- name: Configure Proxmox
+  hosts: proxmox
+  vars:
+    ansible_user: root # play vars outrank the inventory's ansible_user
+    ansible_become: false # root needs no sudo
+  roles:
+    - proxmox_bootstrap

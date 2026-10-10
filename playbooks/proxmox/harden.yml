@@ -1,0 +1,8 @@
+---
+# Prerequisite: bootstrap.yml has run and you can already log in as `ansible` with your key.
+#   ansible-playbook playbooks/proxmox/harden.yml --check --diff
+#   ansible-playbook playbooks/proxmox/harden.yml
+- name: Harden SSH on the Proxmox host
+  hosts: proxmox
+  roles:
+    - proxmox_hardening

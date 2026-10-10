@@ -1,0 +1,69 @@
+---
+- name: Create the manifest folder
+  ansible.builtin.file:
+    path: "{{ k8s_app_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the Jellyfin manifest
+  ansible.builtin.template:
+    src: jellyfin.yaml.j2
+    dest: "{{ jellyfin_manifest_path }}"
+    mode: "0644"
+
+- name: Apply and wait for the rollout
+  block:
+    - name: Kubectl apply
+      ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ jellyfin_manifest_path }}"
+      register: jellyfin_apply
+      changed_when: jellyfin_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+    - name: Wait for Jellyfin to become ready (first start pulls the image; allow time)
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} rollout status deployment/jellyfin --timeout={{ jellyfin_rollout_timeout }}"
+      changed_when: false
+      check_mode: false
+
+  rescue:
+    - name: Collect what Kubernetes says went wrong
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ kubectl_cmd }} -n {{ media_namespace }} get pods,pvc -o wide
+        echo ---- EVENTS ----
+        {{ kubectl_cmd }} -n {{ media_namespace }} get events --sort-by=.lastTimestamp | tail -15
+      args:
+        executable: /bin/bash
+      register: jellyfin_diag
+      changed_when: false
+      failed_when: false
+
+    - name: Show it
+      ansible.builtin.debug:
+        var: jellyfin_diag.stdout_lines
+
+    - name: Stop
+      ansible.builtin.fail:
+        msg: >-
+          Jellyfin did not become ready. The output above usually names the cause:
+          ImagePullBackOff means the image tag is wrong or unreachable (check jellyfin_version);
+          Pending with a volume message points at the storage claims.
+
+- name: Check the health endpoint through the ingress, from another node
+  ansible.builtin.uri:
+    url: "http://{{ hostvars[groups['anvil_workers'][0]].ansible_host }}/health"
+    headers:
+      Host: "{{ jellyfin_hostname }}"
+    return_content: true
+  register: jellyfin_health
+  retries: 12
+  delay: 5
+  until: jellyfin_health.status == 200
+  changed_when: false
+  check_mode: false
+
+- name: Result
+  ansible.builtin.debug:
+    msg:
+      - "Jellyfin answered: {{ jellyfin_health.content }}"
+      - "Open http://{{ hostvars[groups['anvil_workers'][0]].ansible_host }} in a browser to finish setup."
+      - "Add a library per folder, from the container path: {{ media_libraries | map('regex_replace', '^', '/media/') | join(', ') }}"
+      - "Jellyfin has no real 'books' library type; books are stored for dedicated apps (see docs/storage.md)."
