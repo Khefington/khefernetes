@@ -58,4 +58,5 @@ media_gid: 1500
 media_transfers:
   - { src: "/mnt/c/Users/konno/Videos/Movies", dest: "media/movies" }
   - { src: "/mnt/c/Users/konno/Videos/TV", dest: "media/tv" }
+  - { src: "/mnt/c/Users/konno/Videos/Books", dest: "media/books" }
   # - { src: "/mnt/d/Music/",                       dest: "media/music" }

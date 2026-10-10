@@ -11,13 +11,10 @@
     kubectl: /var/lib/rancher/rke2/bin/kubectl
     kubeconfig: /etc/rancher/rke2/rke2.yaml
     manifest_dir: /etc/khefernetes/manifests
-
-    jellyfin_version: "10.11.11" # pinned; image tags follow Jellyfin's release numbers
     jellyfin_hostname: "jellyfin.{{ lan_domain }}"
     jellyfin_ingress_class: "{{ ingress_class_name | default('nginx') }}"
     jellyfin_config_size: 20Gi # users, watch history, metadata, trickplay images
     jellyfin_cache_limit: 20Gi # transcoding scratch space on the node's disk
-    timezone: America/Chicago
   tasks:
     - name: Create the manifest folder
       ansible.builtin.file:

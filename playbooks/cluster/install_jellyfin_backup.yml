@@ -1,0 +1,103 @@
+---
+# Nightly Jellyfin backup: asks Jellyfin to build a consistent backup, copies it to the HDD
+# (<hdd>/data/backups/jellyfin), and keeps the newest N.
+#
+# BEFORE the first run:
+#   1. Jellyfin > Dashboard > Advanced > API Keys > "+" > name it "backup" > copy the key.
+#   2. ansible-vault edit inventories/cluster/group_vars/all/vault.yml
+#        add the line:  vault_jellyfin_api_key: <the key>
+#   3. Move jellyfin_version and timezone into group_vars/all/all.yml (see vars_snippet.yml).
+#
+#   ansible-playbook playbooks/cluster/install_jellyfin_backup.yml
+#   ansible-playbook playbooks/cluster/install_jellyfin_backup.yml --tags backup_now   # run one now, as a test
+
+# ---- Play 1: create the destination folder on the HDD -----------------------------
+- name: Create the backup folder on the HDD
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Ask Proxmox where the storage '{{ media_hdd_storage_id }}' lives
+      ansible.builtin.command: pvesh get /storage/{{ media_hdd_storage_id }} --output-format json
+      register: storage_cfg
+      changed_when: false
+      check_mode: false
+
+    - name: Make sure the HDD is really mounted
+      ansible.builtin.command: mountpoint -q {{ (storage_cfg.stdout | from_json).path }}
+      changed_when: false
+      check_mode: false
+
+    - name: Create backups/jellyfin next to media/ and downloads/
+      ansible.builtin.file:
+        path: "{{ (storage_cfg.stdout | from_json).path }}/{{ data_export_subdir }}/{{ item }}"
+        state: directory
+        owner: "{{ media_uid }}"
+        group: "{{ media_gid }}"
+        mode: "2775"
+      loop:
+        - backups
+        - backups/jellyfin
+
+# ---- Play 2: the Secret and the CronJob --------------------------------------------
+- name: Install the backup job
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  vars:
+    kubectl: /var/lib/rancher/rke2/bin/kubectl
+    kubeconfig: /etc/rancher/rke2/rke2.yaml
+    manifest_dir: /etc/khefernetes/manifests
+    backup_schedule: "15 3 * * *" # every night at 03:15 (cluster timezone below)
+    backup_keep: 14 # newest N of each kind are kept
+  tasks:
+    - name: Make sure the API key is in the vault
+      ansible.builtin.assert:
+        that:
+          - vault_jellyfin_api_key is defined
+          - vault_jellyfin_api_key | length > 10
+        fail_msg: "Add vault_jellyfin_api_key to the vault (see the header of this playbook)."
+
+    - name: Create the manifest folder
+      ansible.builtin.file:
+        path: "{{ manifest_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the manifest (contains the API key, root only)
+      ansible.builtin.template:
+        src: jellyfin-backup.yaml.j2
+        dest: "{{ manifest_dir }}/jellyfin-backup.yaml"
+        mode: "0600"
+      diff: false
+
+    - name: Kubectl apply
+      ansible.builtin.command: "{{ kubectl }} --kubeconfig {{ kubeconfig }} apply -f {{ manifest_dir }}/jellyfin-backup.yaml"
+      register: apply_out
+      changed_when: apply_out.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+    # ---- Only with --tags backup_now ---------------------------------------------
+    - name: Run a backup right now as a test
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media
+        create job jellyfin-backup-manual-{{ lookup('pipe', 'date +%s') }} --from=cronjob/jellyfin-backup
+      register: manual_job
+      tags: [backup_now, never]
+
+    - name: Wait for it to finish (up to 15 minutes)
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media
+        wait --for=condition=complete {{ manual_job.stdout.split()[0] }} --timeout=900s
+      changed_when: false
+      tags: [backup_now, never]
+
+    - name: Show the job's log
+      ansible.builtin.command: >-
+        {{ kubectl }} --kubeconfig {{ kubeconfig }} -n media
+        logs {{ manual_job.stdout.split()[0] }}
+      register: job_log
+      changed_when: false
+      tags: [backup_now, never]
+
+    - name: Log
+      ansible.builtin.debug:
+        var: job_log.stdout_lines
+      tags: [backup_now, never]
