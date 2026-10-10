@@ -1,10 +1,19 @@
 ---
-# First-time setup of the Proxmox host. Connects as root (the automation user does not exist yet).
-#   ansible-playbook playbooks/proxmox/bootstrap.yml -k      (root password prompt)
+# Sets up the Proxmox host: repositories, packages, the automation user, and the Proxmox API user/role/token.
+# Safe to re-run at any time. It does not force a login user, so it follows the inventory
+# (the 'ansible' user + sudo), which is what you want after the first run.
+#
+# FIRST RUN ONLY: the 'ansible' user does not exist yet, so log in as root with the root password:
+#   ansible-playbook playbooks/proxmox/bootstrap.yml -k -e ansible_user=root -e ansible_become=false
+# Use -e (not -u): inventory variables outrank the -u option, but -e outranks everything.
+#
+# LATER RUNS (for example to change the API role or rotate the token), no root needed:
+#   ansible-playbook playbooks/proxmox/bootstrap.yml --tags api
+#   ansible-playbook playbooks/proxmox/bootstrap.yml --tags api -e proxmox_bootstrap_rotate_token=true
+#
+# The first time the API token is created its secret is printed once. Put it in the vault as
+# vault_proxmox_api_token_secret.
 - name: Configure Proxmox
   hosts: proxmox
-  vars:
-    ansible_user: root # play vars outrank the inventory's ansible_user
-    ansible_become: false # root needs no sudo
   roles:
     - proxmox_bootstrap

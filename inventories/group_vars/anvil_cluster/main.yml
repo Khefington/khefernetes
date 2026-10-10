@@ -1,5 +1,5 @@
 ---
-ansible_user: ansible
+ansible_user: "{{ automation_user }}"
 ansible_become: true
 
 # Default VM size. Override per host in host_vars/<host>.yml.

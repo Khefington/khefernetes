@@ -37,13 +37,21 @@ Day-2 tasks live in `playbooks/operations/`.
 - **Everything runs as one identity**: user/group `media` (1500). NFS squashes every client to it.
 - **Safety switches**: disk formatting needs `-e staging_disk_prepare=true`; imports never delete; mounts are verified before any folder is created.
 
-## Proxmox API token privileges
+## Automation accounts (all created by the repo)
 
-User `ansible@pam`, token `Automation`, role `Automation` with:
-Datastore.Allocate Datastore.AllocateSpace Datastore.AllocateTemplate Datastore.Audit Pool.Allocate Sys.Audit Sys.Console Sys.Modify SDN.Use
-VM.Allocate VM.Audit VM.Clone VM.Config.CDROM VM.Config.Cloudinit VM.Config.CPU VM.Config.Disk VM.Config.HWType VM.Config.Memory
-VM.Config.Network VM.Config.Options VM.Migrate VM.PowerMgmt
-The token secret is in the vault as `vault_proxmox_api_token_secret`.
+One name, `automation_user` (default `ansible`, set in `group_vars/all/main.yml`), is used everywhere:
+
+| Where | Created by | Login |
+|---|---|---|
+| castellan, Linux user | `proxmox/bootstrap.yml` (first run as root with `-e ansible_user=root`; later runs as the user itself) | SSH key + passwordless sudo |
+| castellan, Proxmox API user `<user>@pam`, role `Automation`, token `Automation` | `proxmox/bootstrap.yml` (tag `api`) | API token |
+| the three VMs, Linux user | cloud-init, set by `roles/proxmox_vms` | SSH key + sudo |
+
+The role's privileges are listed in `roles/proxmox_bootstrap/defaults/main.yml` (`proxmox_bootstrap_api_privileges`).
+The token is created without privilege separation, so it has exactly the user's permissions.
+Proxmox shows the token secret once, when the token is created. The playbook prints it at that moment; put it in the
+vault as `vault_proxmox_api_token_secret`. Re-running never creates a second token. To replace it:
+`ansible-playbook playbooks/proxmox/bootstrap.yml --tags api -e proxmox_bootstrap_rotate_token=true`, then update the vault.
 
 ## Repository layout
 

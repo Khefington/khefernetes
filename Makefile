@@ -5,7 +5,7 @@ PLAYBOOK := ansible-playbook
 VENV     := .venv
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint yamllint ansible-lint syntax ping site \
+.PHONY: help setup lint yamllint ansible-lint syntax ping site proxmox-api \
         proxmox-template vms nfs rke2 k8s-storage jellyfin jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
@@ -31,6 +31,8 @@ ping: ## Can Ansible reach every host?
 site: ## Run the whole build in order
 	$(PLAYBOOK) playbooks/site.yml
 
+proxmox-api: ## Create/refresh the Proxmox API role, user and token (add ARGS="-e proxmox_bootstrap_rotate_token=true" to rotate)
+	$(PLAYBOOK) playbooks/proxmox/bootstrap.yml --tags api $(ARGS)
 proxmox-template: ## Build the VM template
 	$(PLAYBOOK) playbooks/proxmox/template.yml
 vms: ## Clone the template into the cluster VMs

@@ -15,6 +15,9 @@ metallb_range: 192.168.1.200-192.168.1.220
 timezone: America/Chicago
 
 # --- Access ---
+# The one automation account. It is created on castellan by playbooks/proxmox/bootstrap.yml,
+# on every VM by cloud-init (roles/proxmox_vms), and is the owner of the Proxmox API token.
+automation_user: ansible
 # Public key that is authorised on the Proxmox host and injected into every VM (cloud-init).
 admin_ssh_public_key_file: "~/.ssh/id_ed25519.pub"
 ansible_become_password: "{{ vault_ansible_become_password }}"

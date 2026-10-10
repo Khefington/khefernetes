@@ -1,4 +1,38 @@
 ---
 proxmox_debian_suite: bookworm
-proxmox_bootstrap_user: ansible
+proxmox_bootstrap_user: "{{ automation_user }}"
 proxmox_bootstrap_tools: [smartmontools, nvme-cli, htop, ethtool, vim]
+
+# --- Proxmox API access (user, role, token) ---
+# The user is <automation_user>@pam, so it needs the Linux account of the same name (created above).
+proxmox_bootstrap_api_user: "{{ proxmox_api_user }}"
+proxmox_bootstrap_api_role: Automation
+proxmox_bootstrap_api_token_id: "{{ proxmox_api_token_id }}"
+# Set true to delete and recreate the token (Proxmox shows a secret only once, so this is how you rotate it).
+proxmox_bootstrap_rotate_token: false
+proxmox_bootstrap_api_privileges:
+  - Datastore.Allocate
+  - Datastore.AllocateSpace
+  - Datastore.AllocateTemplate
+  - Datastore.Audit
+  - Pool.Allocate
+  - SDN.Use
+  - Sys.Audit
+  - Sys.Console
+  - Sys.Modify
+  - VM.Allocate
+  - VM.Audit
+  - VM.Clone
+  - VM.Config.CDROM
+  - VM.Config.Cloudinit
+  - VM.Config.CPU
+  - VM.Config.Disk
+  - VM.Config.HWType
+  - VM.Config.Memory
+  - VM.Config.Network
+  - VM.Config.Options
+  - VM.Migrate
+  - VM.PowerMgmt
+
+# Full path, because /usr/sbin is not on the PATH of a normal (non-root) SSH session.
+proxmox_bootstrap_pveum: /usr/sbin/pveum

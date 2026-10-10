@@ -23,7 +23,7 @@
     update: true
     cores: "{{ vm_cores }}"
     memory: "{{ vm_memory_mb }}"
-    ciuser: ansible
+    ciuser: "{{ automation_user }}"
     sshkeys: "{{ lookup('ansible.builtin.file', admin_ssh_public_key_file) }}"
     ipconfig:
       ipconfig0: "ip={{ ansible_host }}/{{ lan_subnet_cidr_prefix }},gw={{ lan_gateway }}"

@@ -1,0 +1,103 @@
+---
+# Creates what the community.proxmox modules log in with: a role, an API user, permissions and a token.
+# Safe to re-run: existing pieces are left alone. The token secret is shown only when the token is created.
+
+- name: Read the existing Proxmox roles
+  ansible.builtin.command: "{{ proxmox_bootstrap_pveum }} role list --output-format json"
+  register: proxmox_bootstrap_roles
+  changed_when: false
+  check_mode: false
+
+- name: Work out whether the role needs creating or updating
+  ansible.builtin.set_fact:
+    proxmox_bootstrap_role_current: >-
+      {{ (proxmox_bootstrap_roles.stdout | from_json
+          | selectattr('roleid', 'equalto', proxmox_bootstrap_api_role) | list) }}
+
+- name: Create the API role
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} role add {{ proxmox_bootstrap_api_role }}
+    --privs {{ proxmox_bootstrap_api_privileges | join(',') | quote }}
+  when: proxmox_bootstrap_role_current | length == 0
+  changed_when: true
+
+- name: Update the API role if its privileges differ
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} role modify {{ proxmox_bootstrap_api_role }}
+    --privs {{ proxmox_bootstrap_api_privileges | join(',') | quote }}
+  when:
+    - proxmox_bootstrap_role_current | length > 0
+    - (proxmox_bootstrap_role_current[0].privs | default('') | split(',') | map('trim') | sort | list) != (proxmox_bootstrap_api_privileges | sort | list)
+  changed_when: true
+
+- name: Read the existing Proxmox users
+  ansible.builtin.command: "{{ proxmox_bootstrap_pveum }} user list --output-format json"
+  register: proxmox_bootstrap_users
+  changed_when: false
+  check_mode: false
+
+- name: Create the API user
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} user add {{ proxmox_bootstrap_api_user | quote }}
+    --comment 'Managed by Ansible'
+  when: proxmox_bootstrap_api_user not in (proxmox_bootstrap_users.stdout | from_json | map(attribute='userid') | list)
+  changed_when: true
+
+- name: Read the existing permissions
+  ansible.builtin.command: "{{ proxmox_bootstrap_pveum }} acl list --output-format json"
+  register: proxmox_bootstrap_acls
+  changed_when: false
+  check_mode: false
+
+- name: Give the API user the role on the whole datacenter
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} acl modify / --users {{ proxmox_bootstrap_api_user | quote }}
+    --roles {{ proxmox_bootstrap_api_role }}
+  when: >-
+    (proxmox_bootstrap_acls.stdout | from_json
+     | selectattr('type', 'equalto', 'user')
+     | selectattr('ugid', 'equalto', proxmox_bootstrap_api_user)
+     | selectattr('roleid', 'equalto', proxmox_bootstrap_api_role)
+     | selectattr('path', 'equalto', '/') | list) | length == 0
+  changed_when: true
+
+- name: Read the existing API tokens of the user
+  ansible.builtin.command: "{{ proxmox_bootstrap_pveum }} user token list {{ proxmox_bootstrap_api_user | quote }} --output-format json"
+  register: proxmox_bootstrap_tokens
+  changed_when: false
+  check_mode: false
+
+- name: Work out whether the token exists
+  ansible.builtin.set_fact:
+    proxmox_bootstrap_token_exists: >-
+      {{ proxmox_bootstrap_api_token_id in
+         (proxmox_bootstrap_tokens.stdout | from_json | map(attribute='tokenid') | list) }}
+
+- name: Delete the token (rotation requested)
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} user token remove {{ proxmox_bootstrap_api_user | quote }} {{ proxmox_bootstrap_api_token_id | quote }}
+  when: proxmox_bootstrap_token_exists | bool and proxmox_bootstrap_rotate_token | bool
+  changed_when: true
+
+- name: Create the API token
+  ansible.builtin.command: >-
+    {{ proxmox_bootstrap_pveum }} user token add {{ proxmox_bootstrap_api_user | quote }} {{ proxmox_bootstrap_api_token_id | quote }}
+    --privsep 0 --output-format json
+  register: proxmox_bootstrap_new_token
+  when: not (proxmox_bootstrap_token_exists | bool) or (proxmox_bootstrap_rotate_token | bool)
+  changed_when: true
+  no_log: true # the secret is shown once, deliberately, in the next task
+
+- name: Show the token secret (this is the only time it is displayed)
+  ansible.builtin.debug:
+    msg:
+      - "NEW API TOKEN CREATED: {{ (proxmox_bootstrap_new_token.stdout | from_json)['full-tokenid'] }}"
+      - "Secret: {{ (proxmox_bootstrap_new_token.stdout | from_json).value }}"
+      - "Put it in the vault NOW as vault_proxmox_api_token_secret (ansible-vault edit inventories/group_vars/all/vault.yml)."
+      - "Proxmox will never show it again. Clear your terminal afterwards."
+  when: proxmox_bootstrap_new_token is not skipped
+
+- name: Say that the token already exists
+  ansible.builtin.debug:
+    msg: "Token {{ proxmox_bootstrap_api_token_id }} already exists, so no new secret was created. Use -e proxmox_bootstrap_rotate_token=true to replace it."
+  when: proxmox_bootstrap_new_token is skipped

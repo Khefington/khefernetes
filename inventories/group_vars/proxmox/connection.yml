@@ -1,0 +1,7 @@
+---
+# How Ansible logs in to castellan after bootstrap: as the 'ansible' user with its SSH key,
+# then sudo (passwordless, set up by playbooks/proxmox/bootstrap.yml). Password logins are
+# disabled by playbooks/proxmox/harden.yml, so root and your own PC username do not work.
+# Only playbooks/proxmox/bootstrap.yml connects as root, and only for the very first run.
+ansible_user: "{{ automation_user }}"
+ansible_become: true

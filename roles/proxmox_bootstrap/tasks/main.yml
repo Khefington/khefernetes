@@ -40,6 +40,10 @@
     mode: "0440"
     validate: /usr/sbin/visudo -cf %s
 
+- name: Create the Proxmox API user, role and token
+  ansible.builtin.import_tasks: api_access.yml
+  tags: [api]
+
 - name: Install debug tools
   ansible.builtin.apt:
     name: "{{ proxmox_bootstrap_tools }}"
