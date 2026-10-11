@@ -3,9 +3,10 @@
 #   ansible-playbook playbooks/proxmox/staging_disk.yml -e staging_disk_prepare=true   (once)
 #   ansible-playbook playbooks/storage/nfs.yml
 #
-# Two exports:
-#   <hdd>/data          media/<library>, downloads/<library>, backups/  (ONE export so hardlinks work)
-#   /mnt/staging/incomplete                                             (2TB SSD: in-progress downloads)
+# Three exports:
+#   <hdd>/data               media/<library>, downloads/<library>, backups/  (ONE export so hardlinks work)
+#   /mnt/staging/incomplete                                                  (2TB SSD: in-progress downloads)
+#   /mnt/staging/appdata                                                     (2TB SSD: Jellyfin trickplay images)
 # Libraries come from media_libraries (inventories/group_vars/all/media.yml).
 - name: Resolve the storage paths
   ansible.builtin.import_playbook: ../common/storage_paths.yml

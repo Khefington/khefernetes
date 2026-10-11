@@ -59,10 +59,28 @@
     echo "== files or folders in the library this user cannot read (should be empty)"
     timeout 120 find /media ! -readable 2>/dev/null | head -n 20
     echo
-    echo "== the actual trickplay errors in Jellyfin's own log (newest files first)"
+    echo "== trickplay results so far (folders on the SSD mount)"
+    echo "trickplay folders: $(find /config/data/trickplay -mindepth 2 -maxdepth 2 -type d 2>/dev/null | wc -l)  size: $(du -sh /config/data/trickplay 2>/dev/null | cut -f1)"
+    echo
+    echo "== trickplay errors in Jellyfin's own log, and how old they are"
     logs=$(ls -t /config/log/*.log 2>/dev/null | head -n 3)
+    pat='Error creating trickplay|Error while saving trickplay|Unable to clear trickplay|Media not found at'
     if [ -z "$logs" ]; then echo "no log files found under /config/log"; else
-      grep -h -A14 -e 'Error creating trickplay' -e 'Error while saving trickplay' -e 'Unable to clear trickplay' -e 'Media not found at' $logs | tail -n 60
+      count=$(grep -h -E "$pat" $logs | wc -l)
+      last=$(grep -h -E "$pat" $logs | grep -o '^\[[^]]*\]' | tail -n 1 | tr -d '[]')
+      if [ "$count" -eq 0 ]; then
+        echo "PASS  no trickplay errors in the 3 newest log files"
+      else
+        age=$(( $(date +%s) - $(date -d "$last" +%s 2>/dev/null || echo 0) ))
+        echo "$count trickplay error(s) in the 3 newest log files; the newest was at $last ($((age / 3600)) h $((age % 3600 / 60)) min ago)"
+        if [ "$age" -lt 3600 ]; then
+          echo "WARN  errors in the last hour: still failing. The newest ones follow."
+        else
+          echo "OK    nothing in the last hour. Older errors are usually from before a settings change."
+          echo "      Run Dashboard > Scheduled Tasks > Generate Trickplay Images, then run this check again."
+        fi
+        grep -h -A8 -E "$pat" $logs | tail -n 24
+      fi
     fi
     SCRIPT
   args:

@@ -31,7 +31,7 @@
     state: directory
     mode: "0755"
 
-- name: Export both trees to the cluster VMs only
+- name: Export the three trees to the cluster VMs only
   ansible.builtin.copy:
     dest: /etc/exports.d/khefernetes.exports
     mode: "0644"
