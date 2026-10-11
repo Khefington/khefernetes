@@ -1,3 +1,5 @@
 ---
 proxmox_vms_clone_timeout: 600
 proxmox_vms_ssh_wait_seconds: 300
+# present = build the VM from the template. absent = stop it and delete it WITH its disks.
+proxmox_vms_state: present

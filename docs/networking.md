@@ -55,7 +55,7 @@ From your PC: `curl -i -H "Host: jellyfin.home.lan" http://192.168.1.200/health`
 ## Switching to Traefik
 `ingress-nginx` is what RKE2 v1.35 ships, but the upstream project reached end of life in March 2026, and RKE2 makes Traefik the default from v1.36.
 The `ingress_controller` setting is written into RKE2's config when the server is installed, so the clean way to switch is at a rebuild:
-1. Set `ingress_controller: traefik` in `kubernetes.yml`.
+1. Set `ingress_controller: traefik` in `kubernetes.yml` (already done in the repo as of the first rebuild).
 2. Rebuild as in `docs/rebuild.md` (`make vms nfs rke2 networking ...`).
 3. `ingress_class_name` follows automatically (`nginx` becomes `traefik`), so the Jellyfin Ingress is created with the right class.
 

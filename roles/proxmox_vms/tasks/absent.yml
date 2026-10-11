@@ -1,0 +1,50 @@
+---
+# Removes this host's VM from Proxmox through the API. Only touches the VM ids in the inventory.
+- name: Refuse anything that is not one of the cluster VMs
+  ansible.builtin.assert:
+    that:
+      - vm_id is defined
+      - vm_id | int != template_vmid | int
+      - inventory_hostname in groups['anvil_cluster']
+    quiet: true
+    fail_msg: "{{ inventory_hostname }} is not a cluster VM, or its vm_id is the template's. Nothing was touched."
+
+- name: Look up whether this VM exists
+  community.proxmox.proxmox_vm_info:
+    vmid: "{{ vm_id }}"
+  register: proxmox_vms_existing
+
+- name: Check that the VM found has the expected name
+  ansible.builtin.assert:
+    that: proxmox_vms_existing.proxmox_vms[0].name == inventory_hostname
+    quiet: true
+    fail_msg: >-
+      VM {{ vm_id }} is called '{{ proxmox_vms_existing.proxmox_vms[0].name | default('?') }}' in Proxmox, not '{{ inventory_hostname }}'.
+      Refusing to delete it. Check vm_id in the inventory.
+  when: proxmox_vms_existing.proxmox_vms | length > 0
+
+- name: Shut the VM down (forced after a minute if it will not stop)
+  community.proxmox.proxmox_kvm:
+    vmid: "{{ vm_id }}"
+    state: stopped
+    force: true
+    timeout: 60
+  when:
+    - proxmox_vms_existing.proxmox_vms | length > 0
+    - proxmox_vms_existing.proxmox_vms[0].status | default('') == 'running'
+
+- name: Delete the VM and its disks
+  community.proxmox.proxmox_kvm:
+    vmid: "{{ vm_id }}"
+    state: absent
+    purge: true
+  when: proxmox_vms_existing.proxmox_vms | length > 0
+
+- name: Forget the old SSH host keys (a rebuilt VM has new ones, and ssh would refuse to connect)
+  ansible.builtin.command: "ssh-keygen -R {{ item }}"
+  loop: ["{{ ansible_host }}", "{{ inventory_hostname }}"]
+  delegate_to: localhost
+  become: false
+  register: proxmox_vms_forget
+  failed_when: false
+  changed_when: "'updated' in proxmox_vms_forget.stdout"

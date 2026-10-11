@@ -1,0 +1,39 @@
+---
+# DELETES the three cluster VMs (kasrkin, wyvern, basilisk) and their disks, so the cluster can be rebuilt.
+#   ansible-playbook playbooks/cluster/destroy_vms.yml        (asks you to type DESTROY)
+# Never touches: castellan's HDD and SSD (the library, backups, trickplay), template 9000, or anything not in anvil_cluster.
+# NOT part of site.yml. Read docs/rebuild.md first.
+- name: Ask for confirmation
+  hosts: localhost
+  gather_facts: false
+  vars_prompt:
+    - name: destroy_confirmation
+      prompt: "This DELETES the VMs kasrkin, wyvern and basilisk and their disks. Type DESTROY to continue"
+      private: false
+  tasks:
+    - name: Stop unless the word was typed exactly
+      ansible.builtin.assert:
+        that: destroy_confirmation == 'DESTROY'
+        quiet: true
+        fail_msg: Nothing was deleted.
+
+- name: Remove the cluster VMs, workers first
+  hosts: anvil_workers:anvil_control_planes
+  gather_facts: false
+  connection: local
+  serial: 1
+  vars:
+    ansible_become: false # play vars beat the group's ansible_become: true
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    proxmox_vms_state: absent
+  module_defaults:
+    community.proxmox.proxmox_kvm: &proxmox_api_with_node
+      api_host: "{{ proxmox_api_host }}"
+      api_user: "{{ proxmox_api_user }}"
+      api_token_id: "{{ proxmox_api_token_id }}"
+      api_token_secret: "{{ proxmox_api_token_secret }}"
+      validate_certs: "{{ proxmox_api_validate_certs }}"
+      node: "{{ proxmox_node }}"
+    community.proxmox.proxmox_vm_info: *proxmox_api_with_node
+  roles:
+    - proxmox_vms

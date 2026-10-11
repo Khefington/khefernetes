@@ -6,7 +6,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint ansible-lint syntax ping site proxmox-api \
-        proxmox-template vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-backup backup-now \
+        proxmox-template vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -35,6 +35,8 @@ proxmox-api: ## Create/refresh the Proxmox API role, user and token (add ARGS="-
 	$(PLAYBOOK) playbooks/proxmox/bootstrap.yml --tags api $(ARGS)
 proxmox-template: ## Build the VM template
 	$(PLAYBOOK) playbooks/proxmox/template.yml
+destroy-vms: ## DELETE the three cluster VMs (asks you to type DESTROY); data on castellan is untouched
+	$(PLAYBOOK) playbooks/cluster/destroy_vms.yml
 vms: ## Clone the template into the cluster VMs
 	$(PLAYBOOK) playbooks/cluster/create_vms.yml
 nfs: ## NFS server on castellan, clients on the VMs, mount tests

@@ -23,7 +23,7 @@ Disks on castellan: 1TB SSD (Proxmox, templates, VM disks), 4TB HDD (media libra
 8. `apps/jellyfin.yml`      Jellyfin
 9. `apps/jellyfin_backup.yml` nightly backup CronJob
 
-One-off, run by hand: `proxmox/bootstrap.yml`, `proxmox/harden.yml`, `proxmox/staging_disk.yml -e staging_disk_prepare=true`.
+One-off, run by hand: `proxmox/bootstrap.yml`, `proxmox/harden.yml`, `proxmox/staging_disk.yml -e staging_disk_prepare=true`, `cluster/destroy_vms.yml` (see `docs/rebuild.md`).
 Day-2 tasks live in `playbooks/operations/`.
 
 ## Design rules

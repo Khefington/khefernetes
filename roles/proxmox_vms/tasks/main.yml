@@ -1,45 +1,9 @@
 ---
-# Provisioning half: talks only to the Proxmox API (the VMs do not exist yet).
-# API connection settings come from the playbook's module_defaults.
-- name: Look up whether this VM already exists
-  community.proxmox.proxmox_vm_info:
-    vmid: "{{ vm_id }}"
-  register: proxmox_vms_existing
+# One role, two desired states. The default builds the VM; 'absent' removes it (playbooks/cluster/destroy_vms.yml).
+- name: Build the VM
+  ansible.builtin.include_tasks: present.yml
+  when: proxmox_vms_state == 'present'
 
-- name: Clone the template (full clone)
-  community.proxmox.proxmox_kvm:
-    clone: "{{ template_name }}"
-    vmid: "{{ template_vmid }}"
-    newid: "{{ vm_id }}"
-    name: "{{ inventory_hostname }}"
-    full: true
-    storage: "{{ vm_storage }}"
-    timeout: "{{ proxmox_vms_clone_timeout }}"
-  when: proxmox_vms_existing.proxmox_vms | length == 0
-
-- name: Set CPU, memory and cloud-init (user, key, static IP, DNS)
-  community.proxmox.proxmox_kvm:
-    vmid: "{{ vm_id }}"
-    update: true
-    cores: "{{ vm_cores }}"
-    memory: "{{ vm_memory_mb }}"
-    ciuser: "{{ automation_user }}"
-    sshkeys: "{{ lookup('ansible.builtin.file', admin_ssh_public_key_file) }}"
-    ipconfig:
-      ipconfig0: "ip={{ ansible_host }}/{{ lan_subnet_cidr_prefix }},gw={{ lan_gateway }}"
-    nameservers: "{{ lan_dns_servers }}"
-    searchdomains: ["{{ lan_domain }}"]
-    onboot: true
-    tags: [rke2, "{{ 'control-plane' if inventory_hostname in groups['anvil_control_planes'] else 'worker' }}"]
-
-- name: Grow the system disk to the size set in the inventory
-  community.proxmox.proxmox_disk:
-    vmid: "{{ vm_id }}"
-    disk: scsi0
-    size: "{{ vm_disk_gb }}G"
-    state: resized
-
-- name: Start the VM
-  community.proxmox.proxmox_kvm:
-    vmid: "{{ vm_id }}"
-    state: started
+- name: Remove the VM
+  ansible.builtin.include_tasks: absent.yml
+  when: proxmox_vms_state == 'absent'
