@@ -3,6 +3,8 @@ node-name: {{ inventory_hostname }}
 node-ip: {{ ansible_host }}
 token: {{ rke2_token }}
 cni: canal
+ingress-controller:
+  - {{ ingress_controller }}
 tls-san:
 {% for san in rke2_tls_sans %}
   - {{ san }}

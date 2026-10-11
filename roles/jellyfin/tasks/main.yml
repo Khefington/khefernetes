@@ -65,5 +65,6 @@
     msg:
       - "Jellyfin answered: {{ jellyfin_health.content }}"
       - "Open http://{{ hostvars[groups['anvil_workers'][0]].ansible_host }} in a browser to finish setup."
+      - "Stable address (once cluster/networking.yml has run): http://{{ ingress_vip }}"
       - "Add a library per folder, from the container path: {{ media_libraries | map('regex_replace', '^', '/media/') | join(', ') }}"
       - "Jellyfin has no real 'books' library type; books are stored for dedicated apps (see docs/storage.md)."

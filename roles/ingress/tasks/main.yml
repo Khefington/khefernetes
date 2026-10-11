@@ -1,0 +1,59 @@
+---
+# Runs on the first control plane node. Needs the metallb role to have run first.
+- name: Check the settings
+  ansible.builtin.assert:
+    that:
+      - ingress_controller in ingress_controllers
+      - ingress_vip.split('.')[:3] == metallb_range.split('-')[0].split('.')[:3]
+      - (ingress_vip.split('.')[3] | int) >= (metallb_range.split('-')[0].split('.')[3] | int)
+      - (ingress_vip.split('.')[3] | int) <= (metallb_range.split('-')[1].split('.')[3] | int)
+    quiet: true
+    fail_msg: >-
+      ingress_controller must be one of {{ ingress_controllers.keys() | list }}, and ingress_vip
+      ({{ ingress_vip }}) must lie inside metallb_range ({{ metallb_range }}).
+
+- name: Write the HelmChartConfig for the selected controller (RKE2 applies it by itself)
+  ansible.builtin.template:
+    src: "{{ ingress_controller }}-config.yaml.j2"
+    dest: "{{ rke2_auto_manifest_dir }}/{{ ingress_controllers[ingress_controller].chart }}-config.yaml"
+    mode: "0644"
+
+- name: Remove the HelmChartConfig of the controller that is not in use
+  ansible.builtin.file:
+    path: "{{ rke2_auto_manifest_dir }}/{{ item.value.chart }}-config.yaml"
+    state: absent
+  loop: "{{ ingress_controllers | dict2items | rejectattr('key', 'equalto', ingress_controller) | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Wait until the ingress has its LoadBalancer address
+  block:
+    - name: Ask the Service for its address
+      ansible.builtin.command: >-
+        {{ kubectl_cmd }} -n {{ ingress_namespace }} get svc {{ ingress_controllers[ingress_controller].service }}
+        -o jsonpath={.status.loadBalancer.ingress[0].ip}
+      register: ingress_lb_ip
+      changed_when: false
+      check_mode: false
+      retries: "{{ ingress_service_timeout_retries }}"
+      delay: 10
+      until: ingress_lb_ip.stdout == ingress_vip
+  rescue:
+    - name: Collect what Kubernetes says
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ kubectl_cmd }} -n {{ ingress_namespace }} describe svc {{ ingress_controllers[ingress_controller].service }} | tail -n 20
+        {{ kubectl_cmd }} -n metallb-system get pods -o wide
+      args:
+        executable: /bin/bash
+      register: ingress_diag
+      changed_when: false
+      failed_when: false
+    - name: Show it
+      ansible.builtin.debug:
+        var: ingress_diag.stdout_lines
+    - name: Stop
+      ansible.builtin.fail:
+        msg: >-
+          The ingress Service never received {{ ingress_vip }}. Common causes: the address is outside the MetalLB pool,
+          another Service already holds it, or the MetalLB pods are not running (see the output above).

@@ -14,7 +14,7 @@ Stop and delete VMs 201-203 in Proxmox (or `qm destroy`). Do not touch the HDD, 
 
 ## 3. Rebuild
 ```
-make vms nfs rke2 k8s-storage jellyfin
+make vms nfs rke2 networking k8s-storage jellyfin
 ```
 (`make site` does the same plus the template and the backup job.)
 

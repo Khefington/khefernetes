@@ -1,0 +1,7 @@
+---
+metallb_manifest_url: "https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
+metallb_manifest_path: "{{ k8s_app_manifest_dir }}/metallb-native.yaml"
+metallb_pool_manifest_path: "{{ k8s_app_manifest_dir }}/metallb-pool.yaml"
+metallb_namespace: metallb-system
+metallb_pool_name: khefernetes-pool
+metallb_rollout_timeout: 300s

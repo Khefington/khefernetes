@@ -1,0 +1,20 @@
+# Managed by Ansible (role ingress). Manual edits will be overwritten.
+# RKE2 runs ingress-nginx as a DaemonSet on host ports 80/443 and creates no Service for it.
+# This adds a LoadBalancer Service so MetalLB can give it one stable LAN address. The host ports stay
+# in place, so http://<node-ip> keeps working too.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-ingress-nginx
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    controller:
+      publishService:
+        enabled: true            # 'kubectl get ingress' then shows the LoadBalancer address
+      service:
+        enabled: true
+        type: LoadBalancer
+        externalTrafficPolicy: Local   # keeps the real client address; every node runs a controller pod
+        annotations:
+          metallb.io/loadBalancerIPs: {{ ingress_vip }}

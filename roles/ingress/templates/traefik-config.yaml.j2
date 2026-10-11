@@ -1,0 +1,16 @@
+# Managed by Ansible (role ingress). Manual edits will be overwritten.
+# RKE2's Traefik runs as a DaemonSet on host ports 80/443 and its Service is ClusterIP by default.
+# This makes the Service a LoadBalancer so MetalLB can give it one stable LAN address.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      annotations:
+        metallb.io/loadBalancerIPs: {{ ingress_vip }}
+      spec:
+        type: LoadBalancer
+        externalTrafficPolicy: Local

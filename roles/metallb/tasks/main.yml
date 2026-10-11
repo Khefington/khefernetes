@@ -1,0 +1,48 @@
+---
+# Runs on the first control plane node (it has kubectl).
+- name: Create the manifest folder
+  ansible.builtin.file:
+    path: "{{ k8s_app_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Download the MetalLB manifest (pinned version, checksum verified)
+  ansible.builtin.get_url:
+    url: "{{ metallb_manifest_url }}"
+    dest: "{{ metallb_manifest_path }}"
+    checksum: "sha256:{{ metallb_sha256 }}"
+    mode: "0644"
+
+- name: Install MetalLB
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ metallb_manifest_path }}"
+  register: metallb_apply
+  changed_when: metallb_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+- name: Wait for the MetalLB controller
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ metallb_namespace }} rollout status deployment/controller
+    --timeout={{ metallb_rollout_timeout }}
+  changed_when: false
+  check_mode: false
+
+- name: Wait for the MetalLB speaker on every node
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ metallb_namespace }} rollout status daemonset/speaker
+    --timeout={{ metallb_rollout_timeout }}
+  changed_when: false
+  check_mode: false
+
+- name: Write the address pool
+  ansible.builtin.template:
+    src: pool.yaml.j2
+    dest: "{{ metallb_pool_manifest_path }}"
+    mode: "0644"
+
+# The pool is validated by MetalLB's webhook, which can take a few seconds after the rollout.
+- name: Apply the address pool
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ metallb_pool_manifest_path }}"
+  register: metallb_pool_apply
+  retries: 12
+  delay: 5
+  until: metallb_pool_apply.rc == 0
+  changed_when: metallb_pool_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0

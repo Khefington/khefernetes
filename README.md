@@ -41,6 +41,7 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 
 - [Architecture and design rules](docs/architecture.md)
 - [Storage, hardlinks, books, large libraries](docs/storage.md)
+- [Networking: MetalLB and the ingress](docs/networking.md)
 - [Secrets](docs/secrets.md)
 - [Rebuild / restore drill](docs/rebuild.md)
 - Runbooks: [import media](docs/runbooks/import-media.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
@@ -49,5 +50,5 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 - [Dev log](docs/devlog.md)
 
 ## Roadmap
-MetalLB (192.168.1.200-220, outside the router's DHCP pool) and a Traefik experiment; etcd snapshots with an off-node copy;
+Switch the ingress to Traefik at the next rebuild (`ingress_controller`); etcd snapshots with an off-node copy;
 qBittorrent behind NordVPN using the 2TB SSD for incomplete downloads; a destroy-and-rebuild test with a Jellyfin restore drill.

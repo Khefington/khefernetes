@@ -1,0 +1,31 @@
+---
+# Cluster networking: MetalLB (stable LAN addresses) and the ingress controller on one of them.
+#   ansible-playbook playbooks/cluster/networking.yml
+# Needs the cluster from cluster/rke2.yml. Safe to re-run; node-IP access to the ingress keeps working.
+- name: MetalLB and the ingress address
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - metallb
+    - ingress
+  post_tasks:
+    - name: Ask the ingress for a page, from a worker, using only the LoadBalancer address
+      ansible.builtin.uri:
+        url: "http://{{ ingress_vip }}/"
+        headers:
+          Host: "{{ jellyfin_hostname | default('jellyfin.' ~ lan_domain) }}"
+        status_code: [200, 301, 302, 404]
+        return_content: false
+      delegate_to: "{{ groups['anvil_workers'][0] }}"
+      register: networking_probe
+      retries: 6
+      delay: 5
+      until: networking_probe.status is defined and networking_probe.status in [200, 301, 302, 404]
+      changed_when: false
+      check_mode: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg:
+          - "The ingress answers on http://{{ ingress_vip }} (HTTP {{ networking_probe.status }})."
+          - "Next: make your router/DNS resolve {{ jellyfin_hostname | default('jellyfin.' ~ lan_domain) }} to {{ ingress_vip }}."

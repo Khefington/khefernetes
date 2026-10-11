@@ -7,7 +7,13 @@ k8s_app_manifest_dir: /etc/khefernetes/manifests
 # Cluster add-ons dropped here are applied by RKE2 itself.
 rke2_auto_manifest_dir: /var/lib/rancher/rke2/server/manifests
 media_namespace: media
-# Ingress controller. nginx is the current default; set to 'traefik' when you switch.
-ingress_class_name: nginx
+# Ingress controller: 'ingress-nginx' (RKE2 v1.35 default) or 'traefik'.
+# Changing it only takes effect on a NEW cluster (it is written into RKE2's config at install time).
+# See docs/networking.md before switching an existing cluster.
+ingress_controller: ingress-nginx
+ingress_class_name: "{{ 'traefik' if ingress_controller == 'traefik' else 'nginx' }}"
+# The one LAN address the ingress answers on. Must be inside metallb_range (group_vars/all/main.yml).
+# Point your DNS name (for example jellyfin.<lan_domain>) at it on your router.
+ingress_vip: 192.168.1.200
 # The kubectl command line used by every role.
 kubectl_cmd: "{{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}"

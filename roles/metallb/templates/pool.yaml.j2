@@ -1,0 +1,19 @@
+# Managed by Ansible (role metallb). Manual edits will be overwritten.
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: {{ metallb_pool_name }}
+  namespace: {{ metallb_namespace }}
+spec:
+  addresses:
+    - {{ metallb_range }}
+---
+# Layer 2: one node answers ARP for each address (and another takes over if it dies).
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: {{ metallb_pool_name }}
+  namespace: {{ metallb_namespace }}
+spec:
+  ipAddressPools:
+    - {{ metallb_pool_name }}

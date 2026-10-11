@@ -1,0 +1,10 @@
+---
+ingress_controllers:
+  ingress-nginx:
+    chart: rke2-ingress-nginx
+    service: rke2-ingress-nginx-controller
+  traefik:
+    chart: rke2-traefik
+    service: rke2-traefik
+ingress_namespace: kube-system
+ingress_service_timeout_retries: 30

@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: ingress
+  author: khefernetes
+  description: "Expose RKE2's packaged ingress controller (ingress-nginx or Traefik) on one stable MetalLB address"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

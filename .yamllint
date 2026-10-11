@@ -5,7 +5,7 @@ ignore: |
   collections/
   _old_layout/
   .github/
-  inventories/group_vars/all/vault.yml
+  inventories/group_vars/**/vault.yml
 rules:
   line-length:
     max: 260

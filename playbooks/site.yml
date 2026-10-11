@@ -14,6 +14,8 @@
   ansible.builtin.import_playbook: storage/nfs.yml
 - name: Install RKE2
   ansible.builtin.import_playbook: cluster/rke2.yml
+- name: Cluster networking (MetalLB and the ingress address)
+  ansible.builtin.import_playbook: cluster/networking.yml
 - name: Bring the storage into Kubernetes
   ansible.builtin.import_playbook: storage/kubernetes.yml
 - name: Deploy Jellyfin
