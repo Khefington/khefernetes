@@ -1,0 +1,13 @@
+# Managed by Ansible (role etcd_backup). Manual edits will be overwritten.
+[Unit]
+Description=Copy RKE2 etcd snapshots to castellan, twice a day
+
+[Timer]
+{% for when in etcd_backup_calendar %}
+OnCalendar={{ when }}
+{% endfor %}
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

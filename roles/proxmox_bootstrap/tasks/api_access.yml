@@ -27,7 +27,8 @@
     --privs {{ proxmox_bootstrap_api_privileges | join(',') | quote }}
   when:
     - proxmox_bootstrap_role_current | length > 0
-    - (proxmox_bootstrap_role_current[0].privs | default('') | split(',') | map('trim') | sort | list) != (proxmox_bootstrap_api_privileges | sort | list)
+    - (proxmox_bootstrap_role_current[0].privs | default('') | split(',') | map('trim') | sort | list)
+      != (proxmox_bootstrap_api_privileges | sort | list)
   changed_when: true
 
 - name: Read the existing Proxmox users

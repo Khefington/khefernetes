@@ -1,0 +1,10 @@
+# Managed by Ansible (role etcd_backup). Manual edits will be overwritten.
+[Unit]
+Description=Copy RKE2 etcd snapshots to castellan
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ etcd_backup_script }}
+TimeoutStartSec=600

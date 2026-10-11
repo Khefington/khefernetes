@@ -16,6 +16,8 @@
   ansible.builtin.import_playbook: cluster/rke2.yml
 - name: Cluster networking (MetalLB and the ingress address)
   ansible.builtin.import_playbook: cluster/networking.yml
+- name: Copy etcd snapshots to castellan
+  ansible.builtin.import_playbook: cluster/etcd_backup.yml
 - name: Bring the storage into Kubernetes
   ansible.builtin.import_playbook: storage/kubernetes.yml
 - name: Deploy Jellyfin

@@ -6,6 +6,7 @@ What is restored: Jellyfin's database (users, watch history, libraries) from the
 
 ## 1. Before you destroy anything
 1. `make backup-now` and confirm the log ends with "Done." A file must exist in `<hdd>/data/backups/jellyfin/`.
+   Also `make etcd-backup-now` and look for `PASS`: the cluster snapshot is then in `<hdd>/data/backups/etcd/kasrkin/` (restore steps: `docs/runbooks/etcd-restore.md`).
 2. Copy that backup off castellan too (a restore drill is only real if the backup is outside the thing you destroy).
 3. Confirm you have `.vault_pass` and the vault file.
 
@@ -14,7 +15,7 @@ Stop and delete VMs 201-203 in Proxmox (or `qm destroy`). Do not touch the HDD, 
 
 ## 3. Rebuild
 ```
-make vms nfs rke2 networking k8s-storage jellyfin
+make vms nfs rke2 etcd-backup networking k8s-storage jellyfin
 ```
 (`make site` does the same plus the template and the backup job.)
 

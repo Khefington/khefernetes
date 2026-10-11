@@ -6,6 +6,7 @@ nfs_server_client_ips: "{{ groups['anvil_cluster'] | map('extract', hostvars, 'a
 nfs_server_extra_dirs:
   - backups
   - backups/jellyfin
+  - backups/etcd
 # Folders created inside the SSD's appdata export.
 nfs_server_appdata_dirs:
   - jellyfin

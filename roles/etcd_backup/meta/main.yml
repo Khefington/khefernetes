@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: etcd_backup
+  author: khefernetes
+  description: "Copy RKE2 etcd snapshots from the control plane to castellan on a timer, and prove the copy arrived"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

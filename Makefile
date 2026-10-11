@@ -6,7 +6,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint ansible-lint syntax ping site proxmox-api \
-        proxmox-template vms nfs rke2 networking k8s-storage jellyfin jellyfin-backup backup-now \
+        proxmox-template vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -41,6 +41,10 @@ nfs: ## NFS server on castellan, clients on the VMs, mount tests
 	$(PLAYBOOK) playbooks/storage/nfs.yml
 rke2: ## Install RKE2
 	$(PLAYBOOK) playbooks/cluster/rke2.yml
+etcd-backup: ## Install the timer that copies etcd snapshots to castellan
+	$(PLAYBOOK) playbooks/cluster/etcd_backup.yml
+etcd-backup-now: ## Take an etcd snapshot now, copy it to castellan and prove it arrived
+	$(PLAYBOOK) playbooks/cluster/etcd_backup.yml -e etcd_backup_take_snapshot_now=true
 networking: ## MetalLB and the ingress LoadBalancer address
 	$(PLAYBOOK) playbooks/cluster/networking.yml
 k8s-storage: ## Namespace, NFS volumes and the local-path provisioner

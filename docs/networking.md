@@ -27,6 +27,23 @@ from a worker node using only that address. Re-running is safe.
 
 Then make your router (or Pi-hole) resolve `jellyfin.<lan_domain>` (default `jellyfin.home.lan`) to `ingress_vip`. Ansible cannot do that step.
 
+## Keeping the addresses from being handed to something else
+Your router's DHCP server hands addresses to devices that ask for one. These machines do not ask, so the router cannot move them:
+- The three VMs get fixed addresses from cloud-init (`ip=192.168.1.5x/24` in `roles/proxmox_vms`).
+- castellan's address is written on the host itself (Proxmox requires a static address; it is in `/etc/network/interfaces` under `vmbr0`).
+- MetalLB addresses are claimed by announcing them on the network, not by asking the router.
+
+The only risk is the opposite one: the router giving the same address to some other device (a phone, a TV), which causes an address conflict.
+Prevent it by keeping every fixed address **outside the router's DHCP range**:
+- `192.168.1.50-53` for castellan and the VMs
+- `192.168.1.200-220` for MetalLB (`metallb_range`)
+
+Check the range in your router settings (exact menu names differ by router model and app). If the router will not let you shrink the range,
+add a reservation for each of `.50-.53` (a reservation ties an address to a device's MAC address), and move `metallb_range` and `ingress_vip` to addresses the range does not cover.
+Current setup: the router's DHCP range is `192.168.1.100-150`, so `.50-.53`, `.200-.220` and the router at `.1` are all outside it.
+Change this note if you change the range.
+To confirm castellan is static: `grep -A6 'iface vmbr0' /etc/network/interfaces` should show `inet static` and `address 192.168.1.50/24`.
+
 ## Check it by hand (on kasrkin)
 ```
 kubectl -n metallb-system get pods                 # controller + one speaker per node, all Running

@@ -1,0 +1,13 @@
+---
+# Copy RKE2 etcd snapshots to castellan (the HDD, next to the Jellyfin backups) on a timer.
+#   ansible-playbook playbooks/cluster/etcd_backup.yml                                  install / refresh the timer
+#   ansible-playbook playbooks/cluster/etcd_backup.yml -e etcd_backup_take_snapshot_now=true   also prove it end to end
+# Needs the NFS server from storage/nfs.yml. Restore steps: docs/runbooks/etcd-restore.md
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: Copy etcd snapshots off the control plane
+  hosts: anvil_control_planes
+  gather_facts: false
+  roles:
+    - etcd_backup

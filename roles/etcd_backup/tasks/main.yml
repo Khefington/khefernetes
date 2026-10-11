@@ -1,0 +1,55 @@
+---
+# Runs on every control plane node. Needs the storage_paths facts (the playbook imports that first).
+- name: Install the NFS client and rsync
+  ansible.builtin.apt:
+    name: [nfs-common, rsync]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the copy script
+  ansible.builtin.template:
+    src: etcd-copy.sh.j2
+    dest: "{{ etcd_backup_script }}"
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install the systemd service and timer
+  ansible.builtin.template:
+    src: "etcd-copy.{{ item }}.j2"
+    dest: "/etc/systemd/system/khefernetes-etcd-copy.{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [service, timer]
+  notify: Reload systemd
+
+- name: Apply the unit files now
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable the timer
+  ansible.builtin.systemd:
+    name: khefernetes-etcd-copy.timer
+    enabled: true
+    state: started
+
+- name: Take a snapshot now (on request)
+  ansible.builtin.command: /usr/local/bin/rke2 etcd-snapshot save
+  when: etcd_backup_take_snapshot_now | bool
+  changed_when: true
+
+- name: Copy any snapshots to castellan now
+  ansible.builtin.command: "{{ etcd_backup_script }}"
+  register: etcd_backup_copy
+  changed_when: "'Copied.' in etcd_backup_copy.stdout"
+
+- name: Prove the newest snapshot is on castellan (on request)
+  ansible.builtin.command: "{{ etcd_backup_script }} verify"
+  register: etcd_backup_verify
+  when: etcd_backup_take_snapshot_now | bool
+  changed_when: false
+
+- name: Result
+  ansible.builtin.debug:
+    msg: "{{ [etcd_backup_copy.stdout] + ([etcd_backup_verify.stdout] if etcd_backup_verify is not skipped else []) }}"

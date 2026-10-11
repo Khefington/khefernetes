@@ -1,0 +1,16 @@
+---
+# RKE2 already takes etcd snapshots on the control plane (default: 00:00 and 12:00, newest 5 kept, on the VM's own disk).
+# This role adds the part that matters when that VM is lost: a copy on castellan, on the HDD next to the Jellyfin backups.
+etcd_backup_nfs_server: "{{ hostvars[groups['proxmox'][0]].ansible_host }}"
+etcd_backup_nfs_export: "{{ hostvars[groups['proxmox'][0]].media_data_path }}"
+etcd_backup_remote_subdir: backups/etcd # becomes backups/etcd/<node name>/ on the share
+etcd_backup_mount_point: /mnt/khefernetes-backups
+etcd_backup_mount_options: nfsvers=4.2,soft,timeo=100,retrans=2 # soft: a dead server makes the copy fail, not hang
+etcd_backup_snapshot_dir: /var/lib/rancher/rke2/server/db/snapshots
+etcd_backup_keep: 60 # copies kept per node on castellan (about 30 days at two snapshots a day)
+etcd_backup_calendar: # systemd times, 30 minutes after RKE2's own snapshots
+  - "*-*-* 00:30:00"
+  - "*-*-* 12:30:00"
+# Set true (make etcd-backup-now) to take a snapshot right now, copy it, and prove it arrived.
+etcd_backup_take_snapshot_now: false
+etcd_backup_script: /usr/local/sbin/khefernetes-etcd-copy

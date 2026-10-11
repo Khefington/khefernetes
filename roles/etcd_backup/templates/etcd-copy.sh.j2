@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Managed by Ansible (role etcd_backup). Manual edits will be overwritten.
+#   khefernetes-etcd-copy          copy new snapshots to castellan, then drop the oldest beyond the keep limit
+#   khefernetes-etcd-copy verify   prove the newest local snapshot is on castellan with the same size (fails if not)
+# The share is mounted only while this runs. If the mount fails nothing is written locally and the script exits non-zero.
+set -euo pipefail
+
+SRC="{{ etcd_backup_snapshot_dir }}"
+MNT="{{ etcd_backup_mount_point }}"
+DEST="$MNT/{{ etcd_backup_remote_subdir }}/{{ inventory_hostname }}"
+KEEP={{ etcd_backup_keep }}
+MODE="${1:-copy}"
+
+mkdir -p "$MNT"
+mounted_here=0
+if ! mountpoint -q "$MNT"; then
+  timeout 60 mount -t nfs -o {{ etcd_backup_mount_options }} {{ etcd_backup_nfs_server }}:{{ etcd_backup_nfs_export }} "$MNT"
+  mounted_here=1
+fi
+cleanup() { if [ "$mounted_here" = 1 ]; then umount "$MNT" || true; fi; }
+trap cleanup EXIT
+mountpoint -q "$MNT" || { echo "ERROR: $MNT is not a mount point, refusing to continue" >&2; exit 1; }
+
+newest_local=""
+if [ -d "$SRC" ]; then newest_local=$(ls -1t "$SRC" 2>/dev/null | head -n 1 || true); fi
+
+if [ "$MODE" = verify ]; then
+  [ -n "$newest_local" ] || { echo "FAIL: no snapshot exists in $SRC" >&2; exit 1; }
+  local_size=$(stat -c %s "$SRC/$newest_local")
+  remote_size=$(stat -c %s "$DEST/$newest_local" 2>/dev/null || echo missing)
+  if [ "$local_size" = "$remote_size" ]; then
+    echo "PASS: $newest_local is on castellan ($local_size bytes) at {{ etcd_backup_remote_subdir }}/{{ inventory_hostname }}/"
+    exit 0
+  fi
+  echo "FAIL: $newest_local is $local_size bytes locally but $remote_size on castellan" >&2
+  exit 1
+fi
+
+if [ -z "$newest_local" ]; then
+  echo "No snapshots in $SRC yet (RKE2 takes the first one at its next scheduled time). Nothing to copy."
+  exit 0
+fi
+mkdir -p "$DEST"
+# Snapshots never change once written, so a copy with the same size is skipped and one with a different size (a damaged
+# copy) is replaced. Owner/permissions are not copied because the share maps every writer to the 'media' user.
+rsync -rt --no-perms --no-owner --no-group --size-only "$SRC"/ "$DEST"/
+# Keep the newest $KEEP copies (names contain no spaces).
+ls -1t "$DEST" | tail -n +$((KEEP + 1)) | while read -r old; do rm -f -- "$DEST/$old"; done
+echo "Copied. Snapshots on castellan for {{ inventory_hostname }}: $(ls -1 "$DEST" | wc -l). Newest: $(ls -1t "$DEST" | head -n 1)"
