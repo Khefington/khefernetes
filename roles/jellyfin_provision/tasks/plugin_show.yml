@@ -14,6 +14,6 @@
     masked: >-
       {%- set out = {} -%}
       {%- for k, v in (jellyfin_provision_plugin_view.json | default({})).items() -%}
-      {%- if k | regex_search('(?i)pass|key|token|secret') -%}{%- set _ = out.update({k: '***'}) -%}{%- else -%}{%- set _ = out.update({k: v}) -%}{%- endif -%}
+      {%- if k | regex_search('(?i)pass|secret|token|api[_-]?key|(^|_)key$') -%}{%- set _ = out.update({k: '***'}) -%}{%- else -%}{%- set _ = out.update({k: v}) -%}{%- endif -%}
       {%- endfor -%}
       {{ out }}

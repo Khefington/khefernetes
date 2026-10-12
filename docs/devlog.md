@@ -40,3 +40,4 @@ High Level Steps / phases
 - Restore left artwork blank: the metadata folder is not in a Jellyfin backup. Metadata, subtitles and attachments now persist on the SSD with trickplay (`jellyfin_persisted_dirs`).
 - VM sizes set per host (wyvern 12 vCPU / 16 GB for Jellyfin); Jellyfin limit raised to 10 GiB.
 - Added `jellyfin_provision`: wizard, plugins (Open Subtitles, Intro Skipper), settings, libraries, users and the backup API key from Git.
+- Open Subtitles credentials now come from the vault through `jellyfin_plugin_settings`. The settings viewer hides secret-looking names more precisely (it no longer masks Intro Skipper's `SnapToKeyframe`).

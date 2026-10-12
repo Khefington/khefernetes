@@ -1,7 +1,10 @@
 # Everything is driven through ansible.cfg (inventory, vault password file, roles path).
 # `make help` lists the targets. Run from the repository root.
 
-PLAYBOOK := ansible-playbook
+# Extra ansible-playbook options for any target:  make jellyfin-provision ARGS="-e some_var=value"
+# (Plain `make target -e var=value` does not work: make keeps -e for itself and never passes it on.)
+ARGS     ?=
+PLAYBOOK := ansible-playbook $(ARGS)
 VENV     := .venv
 
 .DEFAULT_GOAL := help
@@ -34,7 +37,7 @@ site: ## Run the whole build in order
 	$(PLAYBOOK) playbooks/site.yml
 
 proxmox-api: ## Create/refresh the Proxmox API role, user and token (add ARGS="-e proxmox_bootstrap_rotate_token=true" to rotate)
-	$(PLAYBOOK) playbooks/proxmox/bootstrap.yml --tags api $(ARGS)
+	$(PLAYBOOK) playbooks/proxmox/bootstrap.yml --tags api
 proxmox-template: ## Build the VM template
 	$(PLAYBOOK) playbooks/proxmox/template.yml
 destroy-vms: ## DELETE the three cluster VMs (asks you to type DESTROY); data on castellan is untouched

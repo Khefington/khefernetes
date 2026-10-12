@@ -18,7 +18,7 @@ Everything it applies is in `inventories/group_vars/all/jellyfin.yml`; the passw
 - **Add a user:** add an entry to `jellyfin_users` (with a `vault_...` password), then `make jellyfin-provision`.
 - **Add a library:** add an entry to `jellyfin_libraries`; the folder must exist (add it to `media_libraries` and run `make nfs`).
 - **Add a plugin:** add its repository (if third-party) and its catalogue name, then run it. The end of the run prints the installed versions: copy them into the list as `version:` to pin them.
-- **Plugin settings (OpenSubtitles login, ...):** run `make jellyfin-provision -e jellyfin_provision_show_plugin_config=true` to list each plugin's setting names (secrets are shown as `***`), then put the values under `jellyfin_plugin_settings`.
+- **Plugin settings (OpenSubtitles login, ...):** run `make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"` to list each plugin's setting names (secrets are shown as `***`), then put the values under `jellyfin_plugin_settings`.
 
 ## If it stops
 - *Could not log in as Khef*: the server was restored from a backup and the old password applies. Put it in the vault as `vault_jellyfin_khef_password`.

@@ -63,14 +63,15 @@ jellyfin_plugin_repositories:
 # the end of the run prints what was installed: copy those versions here to pin them.
 # Third-party plugins run inside Jellyfin with full access, so add only what you have looked at.
 jellyfin_plugins:
-  - { name: Open Subtitles }
-  - { name: Intro Skipper }
+  - { name: Open Subtitles, version: "24.0.0.0" }
+  - { name: Intro Skipper, version: "1.10.11.24" }
 
 # Plugin settings, keyed by plugin name; merged into the plugin's saved settings.
-# Find the setting names with: make jellyfin-provision -e jellyfin_provision_show_plugin_config=true
-# Example (names to be confirmed from that output):
-#   jellyfin_plugin_settings:
-#     Open Subtitles:
-#       Username: "{{ vault_opensubtitles_username }}"
-#       Password: "{{ vault_opensubtitles_password }}"
-jellyfin_plugin_settings: {}
+# Find the setting names with: make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"
+# Open Subtitles: credentials come from the vault (vault_opensubtitles_*).
+# Intro Skipper: its defaults are fine, nothing to set.
+# TMDb already has its key from the Jellyfin install; OMDb is parked until you have a key.
+jellyfin_plugin_settings:
+  Open Subtitles:
+    Username: "{{ vault_opensubtitles_username }}"
+    Password: "{{ vault_opensubtitles_password }}"

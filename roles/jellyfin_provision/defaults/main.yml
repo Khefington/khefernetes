@@ -19,7 +19,7 @@ jellyfin_provision_backup_key_app: khefernetes-backup
 jellyfin_provision_create_secret: true
 
 # Print every plugin's saved settings (secrets masked) so you can see which keys exist:
-#   make jellyfin-provision -e jellyfin_provision_show_plugin_config=true
+#   make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"
 jellyfin_provision_show_plugin_config: false
 jellyfin_provision_scan_after: false # start a library scan at the end
 
