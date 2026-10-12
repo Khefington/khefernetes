@@ -44,6 +44,8 @@ mkdir -p "$DEST"
 # Snapshots never change once written, so a copy with the same size is skipped and one with a different size (a damaged
 # copy) is replaced. Owner/permissions are not copied because the share maps every writer to the 'media' user.
 rsync -rt --no-perms --no-owner --no-group --size-only "$SRC"/ "$DEST"/
+# RKE2 writes snapshots readable by root only. Make the copies readable so you can scp them (also fixes copies made earlier).
+find "$DEST" -type f -exec chmod {{ etcd_backup_file_mode }} {} +
 # Keep the newest $KEEP copies (names contain no spaces).
 ls -1t "$DEST" | tail -n +$((KEEP + 1)) | while read -r old; do rm -f -- "$DEST/$old"; done
 echo "Copied. Snapshots on castellan for {{ inventory_hostname }}: $(ls -1 "$DEST" | wc -l). Newest: $(ls -1t "$DEST" | head -n 1)"

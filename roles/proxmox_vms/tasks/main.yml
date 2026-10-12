@@ -1,5 +1,8 @@
 ---
 # One role, two desired states. The default builds the VM; 'absent' removes it (playbooks/cluster/destroy_vms.yml).
+- name: Check the Python libraries first
+  ansible.builtin.include_tasks: preflight.yml
+
 - name: Build the VM
   ansible.builtin.include_tasks: present.yml
   when: proxmox_vms_state == 'present'

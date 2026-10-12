@@ -9,13 +9,14 @@ Take it one numbered step at a time and check the "You should see" line before g
 
 ## 1. Before you destroy anything
 1. Apply the repo to your checkout, then `git status` and commit. From now until the VMs are gone, **do not run `make rke2`, `make networking` or `make jellyfin` against the live cluster**: the inventory now says Traefik and the new RKE2 token.
-2. Open the vault (`ansible-vault edit inventories/group_vars/all/vault.yml`) and confirm `vault_rke2_token` is the new token you generated.
-3. `make backup-now`. *You should see:* the log ends with "Done.", and a new zip exists in `<hdd>/data/backups/jellyfin/`.
-4. `make etcd-backup-now`. *You should see:* `PASS: ... is on castellan`.
-5. Copy the newest Jellyfin backup off castellan, for example from WSL:
+2. Make sure your Python tools are current: `make setup`, then `source .venv/bin/activate`. The Proxmox steps (`make vms`, `make destroy-vms`) need proxmoxer 2.3 or newer, and they stop with a message if it is older.
+3. Open the vault (`ansible-vault edit inventories/group_vars/all/vault.yml`) and confirm `vault_rke2_token` is the new token you generated.
+4. `make backup-now`. *You should see:* the log ends with "Done.", and a new zip exists in `<hdd>/data/backups/jellyfin/`.
+5. `make etcd-backup-now`. *You should see:* `PASS: ... is on castellan`.
+6. Copy the newest Jellyfin backup off castellan, for example from WSL:
    `scp ansible@castellan:/mnt/pve/castellan-hdd1/data/backups/jellyfin/<newest file> ~/khefernetes-backups/`
    A restore drill only counts if the backup lives outside the thing you destroy.
-6. Write down a baseline to compare against later: how many items each Jellyfin library shows, your users, and one thing with watch history.
+7. Write down a baseline to compare against later: how many items each Jellyfin library shows, your users, and one thing with watch history.
    On kasrkin: `kubectl get nodes -o wide` and `kubectl get ingress -A`.
 
 ## 2. Destroy

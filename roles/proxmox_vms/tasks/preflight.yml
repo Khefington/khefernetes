@@ -1,0 +1,30 @@
+---
+# The Proxmox modules run on this computer, inside the Python that runs Ansible, and need a recent proxmoxer.
+- name: Check the proxmoxer version in the Python that runs Ansible
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_python_interpreter | default(ansible_playbook_python) }}"
+      - -c
+      - |
+        import sys
+        try:
+            import proxmoxer
+        except ImportError:
+            sys.exit("missing")
+        v = tuple(int(p) for p in proxmoxer.__version__.split(".")[:2])
+        sys.exit(0 if v >= (2, 3) else "too old: " + proxmoxer.__version__)
+  register: proxmox_vms_proxmoxer
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Stop with the fix if proxmoxer is missing or too old
+  ansible.builtin.assert:
+    that: proxmox_vms_proxmoxer.rc == 0
+    quiet: true
+    fail_msg: >-
+      proxmoxer 2.3 or newer is required in {{ ansible_python_interpreter | default(ansible_playbook_python) }}
+      ({{ proxmox_vms_proxmoxer.stderr | default('') | trim }}). Run 'make setup', then 'source .venv/bin/activate'
+      (or: pip install -U 'proxmoxer>=2.3.0'), and try again. Nothing was changed.
+  run_once: true

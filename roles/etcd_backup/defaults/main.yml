@@ -13,4 +13,5 @@ etcd_backup_calendar: # systemd times, 30 minutes after RKE2's own snapshots
   - "*-*-* 12:30:00"
 # Set true (make etcd-backup-now) to take a snapshot right now, copy it, and prove it arrived.
 etcd_backup_take_snapshot_now: false
+etcd_backup_file_mode: "0644" # mode of the copies on castellan (RKE2 writes its own snapshots 0600)
 etcd_backup_script: /usr/local/sbin/khefernetes-etcd-copy
