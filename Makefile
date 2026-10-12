@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -72,6 +72,8 @@ jellyfin: ## Deploy Jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin.yml
 jellyfin-gpu-test: ## Stage 4c: prove Quick Sync works inside the running Jellyfin pod (ffmpeg QSV encode/decode)
 	$(PLAYBOOK) playbooks/apps/jellyfin_gpu_test.yml
+jellyfin-transcode-check: ## READ-ONLY: did the latest playbacks use the GPU? (reads Jellyfin's transcode logs)
+	$(PLAYBOOK) playbooks/apps/jellyfin_transcode_check.yml
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
 	$(PLAYBOOK) playbooks/apps/jellyfin_provision.yml
 jellyfin-backup: ## Install the nightly Jellyfin backup job

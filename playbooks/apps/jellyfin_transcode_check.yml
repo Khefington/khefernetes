@@ -1,0 +1,11 @@
+---
+# READ-ONLY: did the latest playbacks use the GPU? Reads Jellyfin's transcode logs. Changes nothing.
+#   ansible-playbook playbooks/apps/jellyfin_transcode_check.yml
+- name: Check what the latest transcodes used
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Read the logs
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: transcode_check.yml

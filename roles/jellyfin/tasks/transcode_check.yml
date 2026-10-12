@@ -1,0 +1,36 @@
+---
+# READ-ONLY. Jellyfin writes one log per transcode (FFmpeg.Transcode-*.log) that starts with the exact ffmpeg command line and
+# contains ffmpeg's "Stream mapping". That is the definitive answer to "did this playback use the GPU?".
+#   make jellyfin-transcode-check
+- name: Read the newest transcode logs inside the pod
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      {{ kubectl_cmd }} -n {{ media_namespace }} exec -i deploy/jellyfin -- sh -s <<'SCRIPT'
+      cd {{ jellyfin_log_dir }} 2>/dev/null || { echo "No log folder yet ({{ jellyfin_log_dir }})."; exit 0; }
+      n=0
+      for f in $(ls -t FFmpeg.Transcode-*.log 2>/dev/null | head -{{ jellyfin_transcode_check_count }}); do
+        n=$((n + 1))
+        hw=$(grep -m1 -o -E -- '-hwaccel [a-z0-9_]+' "$f" | cut -d' ' -f2)
+        codecs=$(grep -m1 -E -- 'ffmpeg|FFmpeg' "$f" | grep -o -E -- '-c:v(:[0-9])? [a-z0-9_]+' | tr '\n' ' ')
+        echo "== $f  ($(stat -c %y "$f" | cut -d. -f1))"
+        if [ -n "$hw" ]; then echo "   decoding: hardware ($hw)"; else echo "   decoding: software (no -hwaccel flag)"; fi
+        echo "   codec flags: ${codecs:-none found}"
+        case "$codecs" in
+          *_qsv*|*_vaapi*) echo "   encoding: hardware" ;;
+          *libx26*|*libvpx*|*libsvtav1*) echo "   encoding: SOFTWARE" ;;
+          *) echo "   encoding: unclear, read the log's first lines" ;;
+        esac
+        grep -A3 -m1 'Stream mapping' "$f" | sed 's/^/   /'
+      done
+      [ "$n" -eq 0 ] && echo "No transcode logs yet: nothing has been transcoded since the logs were last cleaned. Play something that needs transcoding, then run this again."
+      exit 0
+      SCRIPT
+  register: jellyfin_transcode_check
+  changed_when: false
+  check_mode: false
+
+- name: Newest transcodes
+  ansible.builtin.debug:
+    var: jellyfin_transcode_check.stdout_lines

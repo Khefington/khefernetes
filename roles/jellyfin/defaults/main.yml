@@ -16,3 +16,5 @@ jellyfin_gpu_enabled: >-
       | selectattr('vm_gpu_passthrough') | list | length) > 0 }}
 jellyfin_gpu_ffmpeg: /usr/lib/jellyfin-ffmpeg/ffmpeg
 jellyfin_gpu_test_file: /tmp/khef-gpu-test.mp4
+jellyfin_log_dir: /config/log
+jellyfin_transcode_check_count: 3

@@ -87,7 +87,10 @@
   ansible.builtin.debug:
     msg:
       - "Quick Sync works inside the Jellyfin pod."
-      - "Now run  make jellyfin-provision  (it sets Jellyfin to QSV), then play something that needs transcoding and look for '(hw)' next to the video stream in Dashboard > Activity > the playing item, or run intel_gpu_top on wyvern."
+      - >-
+        Now run  make jellyfin-provision  (it sets Jellyfin to QSV), play something that needs transcoding, then run
+        make jellyfin-transcode-check  (it reads Jellyfin's transcode log and says whether decoding and encoding used the GPU).
+        sudo intel_gpu_top on wyvern shows the Video engine (VCS) busy.
       - >-
         {{ 'Optional HDR tone mapping works here: add EnableTonemapping: true to jellyfin_encoding_config if you want it.'
            if (jellyfin_gpu_results.results | selectattr('item.fatal', 'equalto', false) | selectattr('rc', 'equalto', 0) | list | length) > 0
