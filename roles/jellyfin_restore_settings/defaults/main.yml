@@ -1,0 +1,10 @@
+---
+# Which archive to restore: a file name from <hdd>/data/backups/jellyfin (jellyfin-settings-YYYYMMDD-HHMMSS.tgz),
+# or the word "latest". Empty on purpose: the play then lists the archives and stops, so you pick one that
+# matches the database backup you restored (an archive from AFTER the rebuild would put back an empty server).
+jellyfin_restore_settings_file: ""
+# Folders inside the archive to put back. 'config' holds profile pictures, the server image, system.xml and
+# friends; 'root' holds the library definitions.
+jellyfin_restore_settings_dirs: [config, root]
+jellyfin_restore_settings_image: "{{ storage_test_image }}"
+jellyfin_restore_settings_timeout_seconds: 300

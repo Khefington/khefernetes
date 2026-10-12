@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: jellyfin_restore_settings
+  author: khefernetes
+  description: "Put back Jellyfin's settings folders (profile pictures, server image, library definitions, XML settings) from a nightly settings archive"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

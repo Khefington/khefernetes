@@ -8,6 +8,7 @@ What it does, in the order a person would click through it. Every step looks fir
 4. Registers plugin repositories and installs the plugins you list, then restarts Jellyfin once if anything was installed.
 5. Merges `jellyfin_server_config` into the server settings (scan concurrency, trickplay threads, ...).
 6. Merges `jellyfin_plugin_settings` into each plugin's saved settings.
+6b. Adds the triggers listed in `jellyfin_scheduled_task_triggers` to scheduled tasks (for example "Scan Media Library" on server start). It only adds; Jellyfin's own default triggers stay.
 7. Creates or updates the libraries. A library is matched by its folder, so a restored library with another name is adopted and renamed, not duplicated.
 8. Creates users and sets who is admin and which libraries each can see. A password is only set when the account is created.
 9. Creates the API key the backup job uses and stores it in the cluster as the Secret `jellyfin-api`.
@@ -18,6 +19,7 @@ Everything it applies is in `inventories/group_vars/all/jellyfin.yml`; the passw
 - **Add a user:** add an entry to `jellyfin_users` (with a `vault_...` password), then `make jellyfin-provision`.
 - **Add a library:** add an entry to `jellyfin_libraries`; the folder must exist (add it to `media_libraries` and run `make nfs`).
 - **Add a plugin:** add its repository (if third-party) and its catalogue name, then run it. The end of the run prints the installed versions: copy them into the list as `version:` to pin them.
+- **Run a task when the server starts (or daily, weekly, every N hours):** add it under `jellyfin_scheduled_task_triggers` using the task's name from Dashboard > Scheduled Tasks. List the names and current triggers with `make jellyfin-provision ARGS="-e jellyfin_provision_show_tasks=true"`. A task that belongs to a plugin only exists once the plugin is installed.
 - **Plugin settings (OpenSubtitles login, ...):** run `make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"` to list each plugin's setting names (secrets are shown as `***`), then put the values under `jellyfin_plugin_settings`.
 
 ## If it stops

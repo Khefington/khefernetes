@@ -22,6 +22,9 @@ jellyfin_provision_create_secret: true
 #   make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"
 jellyfin_provision_show_plugin_config: false
 jellyfin_provision_scan_after: false # start a library scan at the end
+# List every scheduled task and the kinds of trigger it has:
+#   make jellyfin-provision ARGS="-e jellyfin_provision_show_tasks=true"
+jellyfin_provision_show_tasks: false
 
 # What to configure. The real values live in inventories/group_vars/all/jellyfin.yml.
 jellyfin_users: []
@@ -31,3 +34,4 @@ jellyfin_server_config: {}
 jellyfin_plugin_repositories: []
 jellyfin_plugins: []
 jellyfin_plugin_settings: {}
+jellyfin_scheduled_task_triggers: {}

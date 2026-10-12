@@ -1,0 +1,107 @@
+---
+# Restores the settings folders that Jellyfin's own database backup does not hold. Run it AFTER restoring the database
+# in the Dashboard, then run make jellyfin-provision. Jellyfin is stopped while the folders are swapped, and it is
+# always started again, even if something fails. The current folders are moved aside (not deleted).
+- name: List the settings archives on the HDD
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin -c jellyfin --
+    sh -c 'ls -1t /config/data/backups/jellyfin-settings-*.tgz 2>/dev/null | xargs -r -n1 basename'
+  register: jellyfin_restore_settings_listing
+  changed_when: false
+  check_mode: false
+
+- name: Work out the available archives
+  ansible.builtin.set_fact:
+    jellyfin_restore_settings_available: "{{ jellyfin_restore_settings_listing.stdout_lines }}"
+
+- name: Stop here and list them if none was chosen
+  ansible.builtin.fail:
+    msg: |-
+      Pick the archive that goes with the database backup you restored (names carry the date and time):
+      {% for f in jellyfin_restore_settings_available %}
+        {{ f }}
+      {% endfor %}
+      Then run:  make jellyfin-restore-settings ARGS="-e jellyfin_restore_settings_file=<one of the names above, or latest>"
+      (An archive made AFTER the rebuild holds the new, empty server. Choose one from before you destroyed it.)
+  when: jellyfin_restore_settings_file | length == 0 or jellyfin_restore_settings_available | length == 0
+
+- name: Resolve the file name
+  ansible.builtin.set_fact:
+    jellyfin_restore_settings_resolved: >-
+      {{ jellyfin_restore_settings_available | first if jellyfin_restore_settings_file == 'latest' else jellyfin_restore_settings_file }}
+
+- name: Check the archive exists
+  ansible.builtin.assert:
+    that: jellyfin_restore_settings_resolved in jellyfin_restore_settings_available
+    fail_msg: >-
+      '{{ jellyfin_restore_settings_resolved }}' is not in the backup folder. Available: {{ jellyfin_restore_settings_available }}.
+
+- name: Say what is about to happen
+  ansible.builtin.debug:
+    msg:
+      - "Restoring {{ jellyfin_restore_settings_dirs | join(' and ') }} from {{ jellyfin_restore_settings_resolved }}."
+      - "Jellyfin will be stopped for about a minute. The current folders are kept next to the restored ones (named *.before-restore-<time>)."
+
+- name: Swap the folders with Jellyfin stopped
+  block:
+    - name: Remove an earlier restore job, if one is left over
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} delete job jellyfin-restore-settings --ignore-not-found --wait=true"
+      changed_when: false
+
+    - name: Stop Jellyfin
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/jellyfin --replicas=0"
+      changed_when: true
+
+    - name: Wait until its pod is gone
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} wait --for=delete pod -l app=jellyfin --timeout=180s"
+      changed_when: false
+
+    - name: Start the restore job
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} apply -f -"
+        stdin: "{{ lookup('ansible.builtin.template', 'restore-settings-job.yaml.j2') }}"
+      changed_when: true
+
+    - name: Wait for the job to finish
+      ansible.builtin.command: >-
+        {{ kubectl_cmd }} -n {{ media_namespace }} get job jellyfin-restore-settings
+        -o jsonpath={.status.succeeded}/{.status.failed}
+      register: jellyfin_restore_settings_job
+      changed_when: false
+      retries: "{{ (jellyfin_restore_settings_timeout_seconds | int / 5) | int }}"
+      delay: 5
+      until: jellyfin_restore_settings_job.stdout.split('/')[0] == '1' or (jellyfin_restore_settings_job.stdout.split('/')[1] | default('')) not in ['', '0']
+
+    - name: Read what the job did
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} logs job/jellyfin-restore-settings"
+      register: jellyfin_restore_settings_log
+      changed_when: false
+      failed_when: false
+
+    - name: Show it
+      ansible.builtin.debug:
+        var: jellyfin_restore_settings_log.stdout_lines
+
+    - name: Stop if the job failed
+      ansible.builtin.assert:
+        that: jellyfin_restore_settings_job.stdout.split('/')[0] == '1'
+        fail_msg: "The restore job did not succeed (see the log above). Nothing was deleted; Jellyfin is being started again."
+  always:
+    - name: Start Jellyfin again
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/jellyfin --replicas=1"
+      changed_when: true
+
+    - name: Remove the job
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} delete job jellyfin-restore-settings --ignore-not-found --wait=true"
+      changed_when: false
+      failed_when: false
+
+- name: Wait until Jellyfin is ready
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} rollout status deployment/jellyfin --timeout=600s"
+  changed_when: false
+
+- name: Next
+  ansible.builtin.debug:
+    msg:
+      - "Done. Refresh the browser (Ctrl+F5): the profile picture and server image should be back."
+      - "Now run: make jellyfin-provision   (it matches the restored libraries by folder, renames them, and re-applies plugins and settings)."

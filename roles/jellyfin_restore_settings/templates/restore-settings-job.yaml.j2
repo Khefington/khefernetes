@@ -1,0 +1,71 @@
+# Managed by Ansible (khefernetes). Short-lived: roles/jellyfin_restore_settings applies it, reads the result and deletes it.
+# Jellyfin is stopped while this runs, so nothing is writing to the folders.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jellyfin-restore-settings
+  namespace: {{ media_namespace }}
+  labels:
+    app: jellyfin-restore-settings
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ jellyfin_restore_settings_timeout_seconds }}
+  template:
+    metadata:
+      labels:
+        app: jellyfin-restore-settings
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ media_uid }}
+        runAsGroup: {{ media_gid }}
+        fsGroup: {{ media_gid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: {{ jellyfin_restore_settings_image }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              archive="/backups/{{ jellyfin_restore_settings_resolved }}"
+              stamp=$(date +%Y%m%d-%H%M%S)
+              [ -s "$archive" ] || { echo "FAIL: $archive is missing or empty"; exit 1; }
+              echo "Archive: {{ jellyfin_restore_settings_resolved }}"
+              echo "Checking the archive is readable and holds {{ jellyfin_restore_settings_dirs | join(', ') }}..."
+              tar tzf "$archive" > /dev/null
+              for d in {{ jellyfin_restore_settings_dirs | join(' ') }}; do
+                tar tzf "$archive" | grep -q "^$d/" || { echo "FAIL: the archive has no '$d' folder"; exit 1; }
+              done
+              for d in {{ jellyfin_restore_settings_dirs | join(' ') }}; do
+                if [ -d "/config/$d" ]; then
+                  mv "/config/$d" "/config/$d.before-restore-$stamp"
+                  echo "  kept the current /config/$d as $d.before-restore-$stamp"
+                fi
+              done
+              tar xzf "$archive" -C /config {{ jellyfin_restore_settings_dirs | join(' ') }}
+              for d in {{ jellyfin_restore_settings_dirs | join(' ') }}; do
+                echo "  restored /config/$d ($(find "/config/$d" -type f | wc -l) files)"
+              done
+              echo "Profile pictures now in place:"
+              find /config/config/users -maxdepth 2 -iname 'profile.*' 2>/dev/null | sed 's/^/  /' || true
+              echo "DONE"
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: backups, mountPath: /backups, subPath: backups/jellyfin, readOnly: true}
+      volumes:
+        - name: config
+          persistentVolumeClaim: {claimName: jellyfin-config}
+        - name: backups
+          persistentVolumeClaim: {claimName: media-data}

@@ -1,0 +1,10 @@
+---
+# Put back Jellyfin's settings folders (profile pictures, server image, library definitions) from a nightly archive.
+# Run after restoring the database in the Dashboard, before 'make jellyfin-provision'. See docs/rebuild.md.
+#   make jellyfin-restore-settings                     (lists the archives)
+#   make jellyfin-restore-settings ARGS="-e jellyfin_restore_settings_file=latest"
+- name: Restore Jellyfin's settings folders
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - jellyfin_restore_settings

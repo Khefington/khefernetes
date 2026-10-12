@@ -9,7 +9,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
-        proxmox-template dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
+        proxmox-template dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup jellyfin-restore-settings backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -62,6 +62,8 @@ jellyfin: ## Deploy Jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin.yml
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
 	$(PLAYBOOK) playbooks/apps/jellyfin_provision.yml
+jellyfin-restore-settings: ## After a database restore: put back profile pictures, server image and library definitions (ARGS="-e jellyfin_restore_settings_file=latest")
+	$(PLAYBOOK) playbooks/apps/jellyfin_restore_settings.yml
 jellyfin-backup: ## Install the nightly Jellyfin backup job
 	$(PLAYBOOK) playbooks/apps/jellyfin_backup.yml
 backup-now: ## Run one Jellyfin backup immediately (test)

@@ -1,0 +1,40 @@
+---
+- name: Find the task
+  ansible.builtin.set_fact:
+    jellyfin_provision_task: "{{ jellyfin_provision_tasks.json | selectattr('Name', 'equalto', wanted_task.key) | list | first | default({}) }}"
+
+- name: Stop if Jellyfin has no task with that name
+  ansible.builtin.assert:
+    that: jellyfin_provision_task.Id is defined
+    fail_msg: >-
+      There is no scheduled task called '{{ wanted_task.key }}'. Jellyfin has: {{ jellyfin_provision_tasks.json | map(attribute='Name') | sort | list }}.
+      (Tasks that belong to a plugin only exist once the plugin is installed and Jellyfin has restarted.)
+
+- name: Work out which triggers are missing
+  ansible.builtin.set_fact:
+    jellyfin_provision_task_missing: >-
+      {%- set missing = [] -%}
+      {%- for w in wanted_task.value -%}
+      {%- set ns = namespace(found=false) -%}
+      {%- for c in (jellyfin_provision_task.Triggers | default([], true)) -%}
+      {%- if c.Type == w.Type
+             and (c.TimeOfDayTicks | default(none)) == (w.TimeOfDayTicks | default(none))
+             and (c.IntervalTicks | default(none)) == (w.IntervalTicks | default(none))
+             and (c.DayOfWeek | default(none)) == (w.DayOfWeek | default(none)) -%}
+      {%- set ns.found = true -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- if not ns.found -%}{%- set _ = missing.append(w) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ missing }}
+
+- name: Add the missing triggers to '{{ wanted_task.key }}'
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/ScheduledTasks/{{ jellyfin_provision_task.Id }}/Triggers"
+    method: POST
+    body_format: json
+    # This call replaces the whole list, so send the existing triggers plus the new ones.
+    body: "{{ (jellyfin_provision_task.Triggers | default([], true)) + jellyfin_provision_task_missing }}"
+    status_code: 204
+  when: jellyfin_provision_task_missing | length > 0
+  changed_when: true

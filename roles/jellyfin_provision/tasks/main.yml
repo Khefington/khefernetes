@@ -33,6 +33,9 @@
     - name: Plugin settings
       ansible.builtin.include_tasks: plugin_settings.yml
 
+    - name: Scheduled task triggers
+      ansible.builtin.include_tasks: scheduled_tasks.yml
+
     - name: Libraries
       ansible.builtin.include_tasks: libraries.yml
 

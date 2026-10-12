@@ -1,0 +1,28 @@
+---
+# Make sure the scheduled tasks have the triggers you listed in jellyfin_scheduled_task_triggers
+# (for example "run when the server starts"). Triggers that are already there, including Jellyfin's own
+# defaults, are left alone: this only ADDS what is missing.
+- name: Read the scheduled tasks
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/ScheduledTasks"
+  register: jellyfin_provision_tasks
+  changed_when: false
+
+- name: Show every task with its triggers
+  ansible.builtin.debug:
+    msg: >-
+      {%- set out = [] -%}
+      {%- for t in jellyfin_provision_tasks.json -%}
+      {%- set kinds = [] -%}
+      {%- for tr in (t.Triggers | default([], true)) -%}{%- set _ = kinds.append(tr.Type) -%}{%- endfor -%}
+      {%- set _ = out.append(t.Name ~ ': ' ~ (kinds | join(', ') if kinds else 'no triggers')) -%}
+      {%- endfor -%}
+      {{ out }}
+  when: jellyfin_provision_show_tasks | bool
+
+- name: Check each listed task
+  ansible.builtin.include_tasks: scheduled_task_one.yml
+  loop: "{{ jellyfin_scheduled_task_triggers | dict2items }}"
+  loop_control:
+    loop_var: wanted_task
+    label: "{{ wanted_task.key }}"
