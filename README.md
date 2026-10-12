@@ -25,6 +25,7 @@ make site                                   # the whole build, in order
 | Plan Quick Sync (Intel iGPU) for Jellyfin | `make gpu-discover` (read-only), then `make gpu-host`, `make vms`, `make gpu-guest`, `make gpu-plugin`, `make jellyfin`, `make jellyfin-gpu-test`, `make jellyfin-provision` (stages 1-4), see `docs/runbooks/gpu-passthrough.md` |
 | Restore Jellyfin from its newest backup (then provision + fix profile pictures) | `make jellyfin-restore` (details: `docs/runbooks/jellyfin-backup.md`) |
 | Are users' profile pictures linked? / re-attach them | `make jellyfin-profile-check` (read-only), `make jellyfin-profile-fix` |
+| Security audit (read-only) / hardening plan | `make security-audit`, `docs/runbooks/hardening.md` |
 | Look inside a Jellyfin backup zip | `python3 scripts/inspect-jellyfin-backup.py <zip>` |
 | Make `jellyfin.home.lan` work on every device | `make dns`, then set the router DNS to castellan (`docs/runbooks/dns.md`) |
 | Add a library (e.g. audiobooks) | add it to `media_libraries`, then `make nfs` |
@@ -50,7 +51,7 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 - [Names on the LAN: DNS server on castellan](docs/runbooks/dns.md)
 - [Secrets](docs/secrets.md)
 - [Rebuild / restore drill](docs/rebuild.md)
-- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
+- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [hardening](docs/runbooks/hardening.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
 - [Migrating from the old layout](docs/MIGRATION.md)
 - [Ansible variable precedence cheat sheet](docs/ansible-precedence.md)
 - [Dev log](docs/devlog.md)

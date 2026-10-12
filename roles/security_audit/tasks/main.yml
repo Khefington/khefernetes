@@ -1,0 +1,10 @@
+---
+- name: Audit one machine
+  ansible.builtin.include_tasks: host.yml
+  vars:
+    security_audit_kind: "{{ 'proxmox' if inventory_hostname in groups['proxmox'] else 'node' }}"
+  when: security_audit_scope | default('host') == 'host'
+
+- name: Audit the cluster
+  ansible.builtin.include_tasks: cluster.yml
+  when: security_audit_scope | default('host') == 'cluster'

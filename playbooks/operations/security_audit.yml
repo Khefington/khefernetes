@@ -1,0 +1,21 @@
+---
+# READ-ONLY security audit. Changes nothing anywhere. Prints [WARN] / [INFO] / [OK] findings for:
+#   castellan (ports, SSH, firewall, updates, accounts, Proxmox users/2FA/API tokens, NFS exports)
+#   each cluster VM (the same, plus RKE2 hardening settings)
+#   the cluster (namespaces, pod security, network policies, exposed services, TLS, RBAC) and Jellyfin's own security settings
+#   ansible-playbook playbooks/operations/security_audit.yml | tee audit.txt
+- name: Audit the Proxmox host and the cluster VMs
+  hosts: proxmox:anvil_cluster
+  gather_facts: false
+  vars:
+    security_audit_scope: host
+  roles:
+    - security_audit
+
+- name: Audit the cluster and Jellyfin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  vars:
+    security_audit_scope: cluster
+  roles:
+    - security_audit

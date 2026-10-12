@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: security_audit
+  author: khefernetes
+  description: "Read-only security audit of the Proxmox host, the cluster VMs, the Kubernetes cluster and Jellyfin's own settings"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

@@ -1,0 +1,14 @@
+---
+# READ-ONLY. Runs files/cluster_audit.py on the control plane: asks Kubernetes (never reading Secret values) and Jellyfin's API.
+- name: Audit the cluster and Jellyfin's settings
+  ansible.builtin.script:
+    cmd: "cluster_audit.py --kubectl '{{ kubectl_cmd }}' --media-namespace {{ media_namespace }}"
+    executable: "{{ security_audit_python }}"
+  become: true
+  register: security_audit_cluster
+  changed_when: false
+  check_mode: false
+
+- name: Findings for the cluster
+  ansible.builtin.debug:
+    msg: "{{ security_audit_cluster.stdout_lines }}"
