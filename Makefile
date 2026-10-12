@@ -5,7 +5,7 @@ PLAYBOOK := ansible-playbook
 VENV     := .venv
 
 .DEFAULT_GOAL := help
-.PHONY: help setup lint yamllint ansible-lint syntax ping site proxmox-api \
+.PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
@@ -18,9 +18,11 @@ setup: ## Create .venv, install Python packages and Ansible collections (into ./
 	$(VENV)/bin/ansible-galaxy collection install -r requirements.yml -p collections
 	@echo "Now run:  source $(VENV)/bin/activate"
 
-lint: yamllint ansible-lint ## Run every linter
+lint: yamllint ansible-lint jinja ## Run every linter
 yamllint: ## YAML style
 	yamllint .
+jinja: ## Jinja syntax of every condition and template (catches stray quotes in when:)
+	python3 scripts/check-jinja-syntax.py
 ansible-lint: ## Ansible best practices (production profile)
 	ansible-lint
 syntax: ## Syntax-check every playbook

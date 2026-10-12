@@ -16,7 +16,8 @@
     msg: "cloud-init finished degraded: {{ proxmox_vms_cloud_init.stdout_lines }}"
   when:
     - proxmox_vms_cloud_init.rc == 2
-    - "'users' list instead' not in proxmox_vms_cloud_init.stdout"
+    - >-
+      "'users' list instead" not in proxmox_vms_cloud_init.stdout
 
 - name: Check that the hostname matches the inventory name
   ansible.builtin.command: hostname
