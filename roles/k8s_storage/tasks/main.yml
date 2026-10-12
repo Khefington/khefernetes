@@ -13,7 +13,10 @@
     mode: "0644"
 
 - name: Wait until all media claims are Bound
-  ansible.builtin.command: "{{ kubectl_cmd }} get pvc -n {{ media_namespace }} -o jsonpath={.items[*].status.phase}"
+  # Only the static NFS claims: Jellyfin's own claim (local-path) and the test pods' claims are not part of this count.
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} get pvc -n {{ media_namespace }}
+    -o 'jsonpath={.items[?(@.spec.storageClassName=="nfs-static")].status.phase}'
   register: k8s_storage_pvc_phases
   changed_when: false
   check_mode: false
@@ -27,6 +30,10 @@
   ansible.builtin.command: "{{ kubectl_cmd }} -n local-path-storage rollout status deployment/local-path-provisioner --timeout=120s"
   changed_when: false
   check_mode: false
+
+- name: Prove the storage works from every node
+  ansible.builtin.include_tasks: test.yml
+  when: k8s_storage_run_test | bool
 
 - name: Show what exists now
   ansible.builtin.command: "{{ kubectl_cmd }} get storageclass,pv,pvc -A"

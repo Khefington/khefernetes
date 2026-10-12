@@ -54,6 +54,16 @@ Jellyfin itself mounts only `media/` read-only and ignores the folder unless you
   survives a rebuild: a new Jellyfin finds the existing files and adopts them instead of regenerating. It is the one part of
   `/config` that is on NFS; the SQLite database must never be. Keep at least 20% of the SSD free.
 
+## Proving the storage works (`make k8s-storage`)
+After the volumes exist, `make k8s-storage` starts one short-lived pod on every node, with the same user and limits as the real apps, and prints a PASS/FAIL list per node:
+- the three shared volumes are NFS, can be written and read, and files come out owned by the media user (1500:1500)
+- a file can be hardlinked from `downloads/` into `media/` (one filesystem, so the download apps can use hardlinks)
+- the library as Jellyfin sees it (`media/`, read-only) refuses writes and contains every folder in `media_libraries`
+- the node-local volume is a real local disk and supports file locking (what Jellyfin's SQLite database needs)
+
+The pods and their test volumes are deleted afterwards, pass or fail. It takes about a minute (the first run pulls a small image, `storage_test_image`).
+If a check fails the playbook stops and the FAIL lines say which. Skip it with `make k8s-storage ARGS="-e k8s_storage_run_test=false"`.
+
 ## What stays on the node, and why
 Jellyfin's SQLite database (`/config/data/jellyfin.db`) stays on the node-local volume, because SQLite needs a real local disk
 (file locking over NFS is unreliable). It is protected by the nightly backup instead. Everything that is only files and costly to

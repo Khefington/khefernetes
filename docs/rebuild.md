@@ -32,7 +32,7 @@ The playbook removes the old SSH host keys from your PC too, so the new VMs will
 | 3 | `make rke2` | the three nodes listed as Ready |
 | 4 | `make etcd-backup` | the timer is installed (the first copy may say "no snapshots yet", which is fine) |
 | 5 | `make networking` | `The ingress answers on http://192.168.1.200` |
-| 6 | `make k8s-storage` | all 3 media claims `Bound` |
+| 6 | `make k8s-storage` | all 3 media claims `Bound`, then `Storage test passed on kasrkin, wyvern, basilisk` (a PASS/FAIL list per node is printed above it) |
 | 7 | `make jellyfin` | pod ready, then the health check through the ingress answers |
 | 8 | `make jellyfin-provision` | the first-run wizard done, plugins installed, the four libraries and the `Khef` user present, the backup key stored |
 
@@ -42,8 +42,11 @@ After step 3, on kasrkin, check the ingress is Traefik: `kubectl -n kube-system 
 After step 5: `kubectl get svc -A | grep LoadBalancer` should show `rke2-traefik` with EXTERNAL-IP `192.168.1.200`.
 
 ## 4. Jellyfin: set up, then restore the data
-Step 3.8 already did everything that comes from Git: the wizard, the `Khef` admin, the libraries, plugins, settings and the backup API key.
+Step 3.8 already did everything this repo describes: the wizard, the `Khef` admin, the libraries, plugins, settings and the backup API key.
 What is left is the data only a backup holds: watch history and each user's preferences.
+
+**Checkpoint before restoring (this is the real test of the repo):** open `http://jellyfin.home.lan`, log in as `Khef` with the vault password, and look at Dashboard > Plugins (Open Subtitles, Intro Skipper, Bookshelf Active), Dashboard > Libraries (Movies, Shows, Music, Books) and Dashboard > API Keys (`khefernetes-backup`).
+If all of that is there, the rebuild from the repo alone worked. Write down anything that was missing: that is a gap in the repo to fix.
 1. Dashboard > Backups: the nightly zips from the HDD are already listed (that folder on castellan is mounted into the Jellyfin pod). Pick the newest and click Restore. Jellyfin restarts and is unavailable for a minute or two.
 2. Run `make jellyfin-provision` again. The restore brought back the old database, so this re-syncs the backup key and re-applies the settings from Git. Log in with the password that was in the old database; it must match `vault_jellyfin_khef_password`.
 3. `make backup-now`, then `make etcd-backup-now` (the new cluster has a new token, so take a fresh snapshot with it).

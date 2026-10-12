@@ -1,0 +1,80 @@
+---
+# Storage self-test: one short-lived pod per node, run as the media user, proving what the apps will rely on.
+# Nothing is left behind: the pods and their node-local test volumes are removed at the end, pass or fail.
+- name: Find the cluster nodes
+  ansible.builtin.command: "{{ kubectl_cmd }} get nodes -o jsonpath={.items[*].metadata.name}"
+  register: k8s_storage_test_nodes_out
+  changed_when: false
+  check_mode: false
+
+- name: Run the test on every node, then clean up
+  vars:
+    k8s_storage_test_nodes: "{{ k8s_storage_test_nodes_out.stdout.split() }}"
+  block:
+    - name: Remove leftovers from an earlier run
+      ansible.builtin.command: "{{ kubectl_cmd }} delete pod,pvc -n {{ media_namespace }} -l app=storage-test --ignore-not-found --wait=true --timeout=120s"
+      changed_when: false
+      check_mode: false
+
+    - name: Start one test pod per node
+      ansible.builtin.command:
+        cmd: "{{ kubectl_cmd }} apply -f -"
+        stdin: "{{ lookup('ansible.builtin.template', 'storage-test.yaml.j2') }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Wait for each pod to finish (the first run pulls the image)
+      ansible.builtin.command: "{{ kubectl_cmd }} get pod storage-test-{{ item }} -n {{ media_namespace }} -o jsonpath={.status.phase}"
+      loop: "{{ k8s_storage_test_nodes }}"
+      register: k8s_storage_test_phase
+      changed_when: false
+      check_mode: false
+      retries: "{{ (k8s_storage_test_timeout_seconds | int / 5) | int }}"
+      delay: 5
+      until: k8s_storage_test_phase.stdout in ['Succeeded', 'Failed']
+
+    - name: Read what each pod reported
+      ansible.builtin.command: "{{ kubectl_cmd }} logs storage-test-{{ item }} -n {{ media_namespace }}"
+      loop: "{{ k8s_storage_test_nodes }}"
+      register: k8s_storage_test_logs
+      changed_when: false
+      check_mode: false
+      failed_when: false
+
+    - name: Show the results
+      ansible.builtin.debug:
+        msg: "{{ ['== ' ~ item.item] + item.stdout_lines }}"
+      loop: "{{ k8s_storage_test_logs.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Stop if any node failed a check
+      ansible.builtin.assert:
+        that: k8s_storage_test_phase.results | map(attribute='stdout') | unique | list == ['Succeeded']
+        fail_msg: >-
+          The storage test failed on: {{ k8s_storage_test_phase.results | rejectattr('stdout', 'equalto', 'Succeeded') | map(attribute='item') | list }}.
+          Read the FAIL lines above. The fix is usually on castellan (folder ownership or exports: make nfs) or in the volume definitions.
+        success_msg: "Storage test passed on {{ k8s_storage_test_nodes | join(', ') }}."
+  rescue:
+    - name: Ask Kubernetes why the test did not finish
+      ansible.builtin.command: "{{ kubectl_cmd }} describe pod -n {{ media_namespace }} -l app=storage-test"
+      register: k8s_storage_test_describe
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Show the events
+      ansible.builtin.debug:
+        msg: "{{ k8s_storage_test_describe.stdout_lines | select('match', '^(Name:|Node:|Status:|Events:|  (Warning|Normal) )') | list }}"
+
+    - name: Stop
+      ansible.builtin.fail:
+        msg: >-
+          The storage test did not pass (details above). The test pods are removed now; run it again with 'make k8s-storage'
+          after fixing the cause.
+  always:
+    - name: Remove the test pods and their node-local volumes
+      ansible.builtin.command: "{{ kubectl_cmd }} delete pod,pvc -n {{ media_namespace }} -l app=storage-test --ignore-not-found --wait=true --timeout=120s"
+      changed_when: false
+      failed_when: false
+      check_mode: false

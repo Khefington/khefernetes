@@ -1,0 +1,147 @@
+# Managed by Ansible (khefernetes). Short-lived: roles/k8s_storage/tasks/test.yml applies it, reads the result and deletes it.
+# One pod per node. Each runs as the same user and with the same limits as the real apps (media user, no extra rights).
+{% for node in k8s_storage_test_nodes %}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: storage-test-{{ node }}
+  namespace: {{ media_namespace }}
+  labels:
+    app: storage-test
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 64Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: storage-test-{{ node }}
+  namespace: {{ media_namespace }}
+  labels:
+    app: storage-test
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: {{ k8s_storage_test_timeout_seconds }}
+  # nodeSelector, not nodeName: the node-local volume is only created when the scheduler picks the node.
+  nodeSelector:
+    kubernetes.io/hostname: {{ node }}
+  tolerations:
+    - operator: Exists
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: {{ media_uid }}
+    runAsGroup: {{ media_gid }}
+    fsGroup: {{ media_gid }}
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test
+      image: {{ k8s_storage_test_image }}
+      imagePullPolicy: IfNotPresent
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 200m, memory: 64Mi}
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          fail=0
+          pass() { echo "PASS: $*"; }
+          bad() { echo "FAIL: $*"; fail=1; }
+          want_owner="{{ media_uid }}:{{ media_gid }}"
+          tmp=""
+          cleanup() { rm -f $tmp; }
+          trap cleanup EXIT
+
+          fstype_of() { awk -v m="$1" '$2 == m { t = $3 } END { print t }' /proc/mounts; }
+
+          is_nfs() {
+            t=$(fstype_of "$1")
+            case "$t" in nfs*) pass "$1 is an NFS mount ($t)" ;; *) bad "$1 is '$t', expected NFS" ;; esac
+          }
+
+          # Write, read back, check who owns the file (the NFS server maps everyone to the media user).
+          write_read() {
+            f="$1/.storage-test-$(hostname)"
+            tmp="$tmp $f"
+            if echo hello > "$f" 2>/dev/null && [ "$(cat "$f")" = hello ]; then
+              owner=$(stat -c %u:%g "$f")
+              if [ "$owner" = "$want_owner" ]; then pass "$1: wrote and read a file, owner $owner"
+              else bad "$1: file is owned by $owner, expected $want_owner"; fi
+            else
+              bad "$1: cannot write a file there"
+            fi
+          }
+
+          echo "Node: $NODE_NAME"
+
+          echo "-- the three shared volumes (NFS from castellan)"
+          for m in /data /incomplete /appdata; do is_nfs "$m"; write_read "$m"; done
+
+          echo "-- hardlink from downloads/ into media/ (needs one filesystem; used by the download apps)"
+          a=/data/downloads/.storage-test-link-src-$(hostname)
+          b=/data/media/.storage-test-link-dst-$(hostname)
+          tmp="$tmp $a $b"
+          if echo link > "$a" 2>/dev/null && ln "$a" "$b" 2>/dev/null \
+             && [ "$(stat -c %i "$a")" = "$(stat -c %i "$b")" ]; then
+            pass "downloads/ and media/ share one filesystem (hardlink worked)"
+          else
+            bad "could not hardlink downloads/ -> media/"
+          fi
+
+          echo "-- the library as Jellyfin sees it (read-only)"
+          if touch /library/.storage-test 2>/dev/null; then
+            rm -f /library/.storage-test
+            bad "/library accepted a write; it must be read-only"
+          else
+            pass "/library refuses writes"
+          fi
+          for lib in {{ media_libraries | join(' ') }}; do
+            if [ -d "/library/$lib" ]; then pass "/library/$lib exists"; else bad "/library/$lib is missing"; fi
+          done
+
+          echo "-- node-local volume (local-path; Jellyfin keeps its database here)"
+          t=$(fstype_of /local)
+          case "$t" in
+            "") bad "/local is not a mounted volume" ;;
+            nfs*) bad "/local is NFS ($t), it must be a local disk" ;;
+            *) pass "/local is a local disk ($t)" ;;
+          esac
+          write_read /local
+          if flock -n /local/.storage-test-lock true; then pass "/local supports file locking"; else bad "file locking failed on /local"; fi
+          tmp="$tmp /local/.storage-test-lock"
+
+          echo "-- space"
+          df -h /data /incomplete /appdata /local | sed 's/^/   /'
+
+          if [ "$fail" = 0 ]; then echo "ALL CHECKS PASSED on $NODE_NAME"; else echo "SOME CHECKS FAILED on $NODE_NAME"; fi
+          exit $fail
+      env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      volumeMounts:
+        - {name: data, mountPath: /data}
+        - {name: incomplete, mountPath: /incomplete}
+        - {name: appdata, mountPath: /appdata}
+        - {name: data, mountPath: /library, subPath: media, readOnly: true}
+        - {name: local, mountPath: /local}
+  volumes:
+    - name: data
+      persistentVolumeClaim: {claimName: media-data}
+    - name: incomplete
+      persistentVolumeClaim: {claimName: media-incomplete}
+    - name: appdata
+      persistentVolumeClaim: {claimName: media-appdata}
+    - name: local
+      persistentVolumeClaim: {claimName: storage-test-{{ node }}}
+{% endfor %}

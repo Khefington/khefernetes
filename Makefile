@@ -56,7 +56,7 @@ etcd-backup-now: ## Take an etcd snapshot now, copy it to castellan and prove it
 	$(PLAYBOOK) playbooks/cluster/etcd_backup.yml -e etcd_backup_take_snapshot_now=true
 networking: ## MetalLB and the ingress LoadBalancer address
 	$(PLAYBOOK) playbooks/cluster/networking.yml
-k8s-storage: ## Namespace, NFS volumes and the local-path provisioner
+k8s-storage: ## Namespace, NFS volumes, local-path provisioner, then a self-test pod on every node (skip: ARGS="-e k8s_storage_run_test=false")
 	$(PLAYBOOK) playbooks/storage/kubernetes.yml
 jellyfin: ## Deploy Jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin.yml

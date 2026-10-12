@@ -8,3 +8,7 @@ k8s_storage_data_capacity: 4Ti # hard drive size
 k8s_storage_staging_capacity: 1800Gi # 2TB SSD
 k8s_storage_appdata_capacity: 500Gi # trickplay and other app files on the 2TB SSD
 k8s_storage_expected_claims: 3
+# After the volumes exist, run one short-lived pod on every node that proves they work (set false to skip).
+k8s_storage_run_test: true
+k8s_storage_test_image: "{{ storage_test_image }}"
+k8s_storage_test_timeout_seconds: 240

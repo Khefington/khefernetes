@@ -8,6 +8,9 @@ jellyfin_version: "10.11.11" # image tags follow Jellyfin's release numbers
 local_path_version: v0.0.37
 local_path_sha256: 9781b39c24f3f651bd6d6e41b561e04e4904bbdb6d4f8c7a6009df3a702dcd65
 
+# Tiny image for the storage self-test pods (make k8s-storage): a shell, stat, ln, flock and nothing else.
+storage_test_image: docker.io/library/busybox:1.37.0
+
 # MetalLB (gives LoadBalancer services a real LAN address). Re-check the checksum when bumping:
 #   curl -sL https://raw.githubusercontent.com/metallb/metallb/<version>/config/manifests/metallb-native.yaml | sha256sum
 metallb_version: v0.16.1
