@@ -22,7 +22,6 @@ make site                                   # the whole build, in order
 | Fix media copied one folder too deep | `make flatten-media` then `make flatten-media APPLY=1` |
 | Jellyfin trickplay / file-access problems | `make diagnose-jellyfin` |
 | Back up Jellyfin now | `make backup-now` |
-| After restoring a Jellyfin backup: profile pictures, server image, libraries | `make jellyfin-restore-settings` (see `docs/rebuild.md`) |
 | Look inside a Jellyfin backup zip | `python3 scripts/inspect-jellyfin-backup.py <zip>` |
 | Make `jellyfin.home.lan` work on every device | `make dns`, then set the router DNS to castellan (`docs/runbooks/dns.md`) |
 | Add a library (e.g. audiobooks) | add it to `media_libraries`, then `make nfs` |

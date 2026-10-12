@@ -47,18 +47,18 @@ What is left is the data only a backup holds: watch history and each user's pref
 
 **Checkpoint before restoring (this is the real test of the repo):** open `http://jellyfin.home.lan`, log in as `Khef` with the vault password, and look at Dashboard > Plugins (Open Subtitles, Intro Skipper, Bookshelf Active), Dashboard > Libraries (Movies, Shows, Music, Books) and Dashboard > API Keys (`khefernetes-backup`).
 If all of that is there, the rebuild from the repo alone worked. Write down anything that was missing: that is a gap in the repo to fix.
-0. Optional, before restoring: look inside the backup you are about to use, to be sure it holds what you expect (users, watch history, saved home screen settings). From WSL, with a copy of the zip:
+0. Before restoring, look inside the backup you are about to use. Jellyfin's backup is a zip holding the database (users, watch history, saved home screen settings),
+   the settings files (`system.xml`, `encoding.xml` with the hardware-acceleration setting, `branding.xml`), the profile pictures and the library definitions.
+   A restore **replaces all of that with the zip's copy**, so anything you changed after the zip was taken is lost. From WSL, with a copy of the zip:
    `python3 scripts/inspect-jellyfin-backup.py ~/khefernetes-backups/<the zip>`
-   Zero rows in "Watch state" means the backup was taken before that data existed, and no restore can bring it back. Pick an older or newer zip.
+   It prints when the zip was taken, the hardware-acceleration value, whether profile pictures are inside, and how many watched / in-progress items and display settings the database holds.
+   If a number is zero, or the time is before you made a change, pick a newer zip (run `make backup-now` on the old server before you destroy it).
 1. Dashboard > Backups: the nightly zips from the HDD are already listed (that folder on castellan is mounted into the Jellyfin pod). Pick the one you chose and click Restore. Jellyfin restarts and is unavailable for a minute or two.
-2. Put back the files the database backup does not hold (profile pictures, the server image, the library definitions): `make jellyfin-restore-settings` lists the settings archives; then run it again with the one that matches your zip (same date and time in the name, or `latest` if the newest is the right one):
-   `make jellyfin-restore-settings ARGS="-e jellyfin_restore_settings_file=jellyfin-settings-<date>-<time>.tgz"`
-   Do not pick an archive made after the rebuild: it holds the new, empty server. Jellyfin stops for about a minute and starts again; your current folders are kept next to the restored ones (`*.before-restore-<time>`).
-3. Run `make jellyfin-provision` again. The restore brought back the old database and libraries, so this matches the libraries by folder, renames them, re-syncs the backup key and re-applies the settings from this repo. Log in with the password that was in the old database; it must match `vault_jellyfin_khef_password`.
-4. `make backup-now`, then `make etcd-backup-now` (the new cluster has a new token, so take a fresh snapshot with it).
-5. Dashboard > Scheduled Tasks: let "Extract Chapter Images" and "Generate Trickplay Images" run overnight; the trickplay, artwork and chapter images already on the SSD are adopted, not rebuilt.
-6. `make diagnose-jellyfin` should show all PASS.
-7. Check what the restore brought back for `Khef`: the home screen layout, "Continue Watching", watched marks and playback settings (these live in the database, so the restore should return them). Anything missing: tell me exactly what, so the backup can be extended.
+2. Run `make jellyfin-provision` again. The restore brought back the old database and library definitions, so this matches the libraries by folder, renames them, re-syncs the backup key and re-applies the settings from this repo. Log in with the password that was in the old database; it must match `vault_jellyfin_khef_password`.
+3. `make backup-now`, then `make etcd-backup-now` (the new cluster has a new token, so take a fresh snapshot with it).
+4. Dashboard > Scheduled Tasks: let "Extract Chapter Images" and "Generate Trickplay Images" run overnight; the trickplay, artwork and chapter images already on the SSD are adopted, not rebuilt.
+5. `make diagnose-jellyfin` should show all PASS.
+6. Check what the restore brought back for `Khef`: the home screen layout, "Continue Watching", watched marks, the profile picture and playback settings. Anything missing: run the inspector on the zip you restored and tell me what it shows.
 
 If you do **not** need the old watch history, skip step 1 and 2: the provisioned server is already complete.
 

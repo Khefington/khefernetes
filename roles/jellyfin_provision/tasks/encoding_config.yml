@@ -1,0 +1,22 @@
+---
+# Playback > Transcoding (hardware acceleration, tone mapping, ...) is stored in Jellyfin's "encoding" configuration.
+# A restore overwrites it with whatever the backup held, so the values you care about live in the repo and are re-applied.
+- name: Read the encoding configuration
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/System/Configuration/encoding"
+  register: jellyfin_provision_encoding_cfg
+  changed_when: false
+
+- name: Work out the new encoding configuration
+  ansible.builtin.set_fact:
+    jellyfin_provision_encoding_cfg_new: "{{ jellyfin_provision_encoding_cfg.json | combine(jellyfin_encoding_config, recursive=true) }}"
+
+- name: Save it
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/System/Configuration/encoding"
+    method: POST
+    body_format: json
+    body: "{{ jellyfin_provision_encoding_cfg_new }}"
+    status_code: 204
+  when: jellyfin_provision_encoding_cfg_new != jellyfin_provision_encoding_cfg.json
+  changed_when: true

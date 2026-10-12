@@ -30,6 +30,10 @@
     - name: Server settings
       ansible.builtin.include_tasks: server_config.yml
 
+    - name: Playback / transcoding settings
+      ansible.builtin.include_tasks: encoding_config.yml
+      when: jellyfin_encoding_config | length > 0
+
     - name: Plugin settings
       ansible.builtin.include_tasks: plugin_settings.yml
 

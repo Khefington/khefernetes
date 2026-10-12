@@ -17,10 +17,10 @@ jellyfin_users:
 # path is where the folder appears INSIDE the Jellyfin pod (the library is mounted at /media).
 # type: movies, tvshows, music, books, ... (Jellyfin's collection types)
 jellyfin_libraries:
-  - {name: Movies, type: movies, path: /media/movies}
-  - {name: Shows, type: tvshows, path: /media/tv}
-  - {name: Music, type: music, path: /media/music}
-  - {name: Books, type: books, path: /media/books}
+  - { name: Movies, type: movies, path: /media/movies }
+  - { name: Shows, type: tvshows, path: /media/tv }
+  - { name: Music, type: music, path: /media/music }
+  - { name: Books, type: books, path: /media/books }
 
 # Options applied to every library (a library entry can add `options:` to override).
 # The media library is mounted read-only, so nothing may be saved next to the media.
@@ -57,18 +57,33 @@ jellyfin_server_config:
 # --- Plugins -------------------------------------------------------------------------------
 # Jellyfin's own repository is always there. Add third-party ones here.
 jellyfin_plugin_repositories:
-  - {Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true}
+  - { Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true }
 
 # name must match the catalogue name exactly. Without a version the newest compatible one is installed;
 # the end of the run prints what was installed: copy those versions here to pin them.
 # Third-party plugins run inside Jellyfin with full access, so add only what you have looked at.
 jellyfin_plugins:
-  - {name: Open Subtitles, version: "24.0.0.0"}
-  - {name: Intro Skipper, version: "1.10.11.24"}
+  - { name: Open Subtitles, version: "24.0.0.0" }
+  - { name: Intro Skipper, version: "1.10.11.24" }
   # Books and audiobooks: reads OPF / Calibre / ComicInfo metadata, Google Books and Comic Vine lookups.
   # In Jellyfin's own catalogue (13.0.0.0 targets 10.11). Deprecated: Jellyfin 12.0 has this built in,
   # so remove it from this list before upgrading to 12.0 (plugins built for 10.11 do not load there).
-  - {name: Bookshelf, version: "13.0.0.0"}
+  - { name: Bookshelf, version: "13.0.0.0" }
+
+# --- Playback / transcoding (Dashboard > Playback > Transcoding) --------------------------------
+# Settings listed here are re-applied on every provisioning run, so restoring an older backup (which overwrites
+# encoding.xml) cannot silently turn them off. Empty = leave whatever the server has.
+# Hardware acceleration only works if the Jellyfin pod can see the GPU (/dev/dri inside the pod). That needs the
+# Intel iGPU passed through to wyvern and mounted into the pod, which this repo does not do yet; turning it on
+# before then makes playback fall back to errors or software. Example for later (names as in Jellyfin's API):
+#   jellyfin_encoding_config:
+#     HardwareAccelerationType: qsv
+#     EnableHardwareEncoding: true
+#     EnableTonemapping: true
+#     HardwareDecodingCodecs: [h264, hevc, mpeg2video, vc1, vp9, av1]
+#     EnableDecodingColorDepth10Hevc: true
+#     EnableDecodingColorDepth10Vp9: true
+jellyfin_encoding_config: {}
 
 # --- Scheduled tasks -----------------------------------------------------------------------
 # Triggers to make sure each task has, keyed by the task's name as the Dashboard shows it. Only ADDS: Jellyfin's own
@@ -77,7 +92,7 @@ jellyfin_plugins:
 # List the tasks and their triggers with: make jellyfin-provision ARGS="-e jellyfin_provision_show_tasks=true"
 jellyfin_scheduled_task_triggers:
   Scan Media Library:
-    - {Type: StartupTrigger}
+    - { Type: StartupTrigger }
 
 # Plugin settings, keyed by plugin name; merged into the plugin's saved settings.
 # Find the setting names with: make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"

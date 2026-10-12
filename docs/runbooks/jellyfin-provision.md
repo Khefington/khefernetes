@@ -8,6 +8,7 @@ What it does, in the order a person would click through it. Every step looks fir
 4. Registers plugin repositories and installs the plugins you list, then restarts Jellyfin once if anything was installed.
 5. Merges `jellyfin_server_config` into the server settings (scan concurrency, trickplay threads, ...).
 6. Merges `jellyfin_plugin_settings` into each plugin's saved settings.
+6a. Merges `jellyfin_encoding_config` into the playback / transcoding settings (hardware acceleration and friends) when you list any, so a restore of an older backup cannot silently change them.
 6b. Adds the triggers listed in `jellyfin_scheduled_task_triggers` to scheduled tasks (for example "Scan Media Library" on server start). It only adds; Jellyfin's own default triggers stay.
 7. Creates or updates the libraries. A library is matched by its folder, so a restored library with another name is adopted and renamed, not duplicated.
 8. Creates users and sets who is admin and which libraries each can see. A password is only set when the account is created.

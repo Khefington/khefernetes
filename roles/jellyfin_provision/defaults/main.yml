@@ -35,3 +35,4 @@ jellyfin_plugin_repositories: []
 jellyfin_plugins: []
 jellyfin_plugin_settings: {}
 jellyfin_scheduled_task_triggers: {}
+jellyfin_encoding_config: {}
