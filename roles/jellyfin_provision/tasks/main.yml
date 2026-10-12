@@ -60,8 +60,8 @@
         name: jellyfin-api
         namespace: {{ media_namespace }}
       type: Opaque
-      stringData:
-        api-key: "{{ jellyfin_provision_backup_key }}"
+      data:
+        api-key: "{{ jellyfin_provision_backup_key | b64encode }}"
   register: jellyfin_provision_secret
   changed_when: "'unchanged' not in jellyfin_provision_secret.stdout"
   no_log: true

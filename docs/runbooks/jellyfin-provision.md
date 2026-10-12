@@ -28,4 +28,6 @@ Everything it applies is in `inventories/group_vars/all/jellyfin.yml`; the passw
 ## Notes
 - Third-party plugins run inside Jellyfin with full access to what it can reach. Add only plugins you have looked at, and pin their versions.
 - Before raising `jellyfin_version`, check that every plugin in the list supports the new version.
+- **Jellyfin 12.0** (released 7 September 2026) rewrites the database on first start and refuses plugins built for 10.11. Bookshelf is deprecated there (its features are in the server). Upgrading means: remove third-party plugins from `jellyfin_plugins`, take a backup, raise `jellyfin_version`, run a full library scan, and re-add plugins once their 12.0 builds exist. Treat it as its own project, not a version bump.
+- The Books library only gets book metadata from Bookshelf on 10.11. Its Comic Vine lookup needs your own API key on the plugin's settings page.
 - Library options keep "save next to media" off because the library is mounted read-only; thumbnails and chapter images are built by the nightly tasks (02:00 and 03:00), not during a scan.
