@@ -1,0 +1,22 @@
+---
+# The device the VM must see (group_vars/all/gpu.yml).
+gpu_passthrough_pci_id: "8086:4680"
+# The i915 driver lives in linux-modules-extra, which the generic kernel metapackage pulls in together with linux-firmware.
+gpu_guest_packages:
+  - linux-image-generic
+  - linux-firmware
+  - vainfo
+  - intel-gpu-tools
+# Free media driver, used when the non-free one (more encoder features) is not in the enabled repositories.
+gpu_guest_media_driver_preferred: intel-media-va-driver-non-free
+gpu_guest_media_driver_fallback: intel-media-va-driver
+gpu_guest_render_node: /dev/dri/renderD128
+gpu_guest_modules_load_file: /etc/modules-load.d/khefernetes-i915.conf
+# A new kernel from the install needs a reboot to be used. Rebooting takes the VM (and what runs on it) down.
+gpu_guest_allow_reboot: false
+gpu_guest_reboot_timeout_seconds: 900
+# Test hook: turn off the apt step.
+gpu_guest_install_packages: true
+gpu_guest_node_wait_seconds: 30
+# Test hook: where the loaded modules are listed.
+gpu_guest_proc_modules: /proc/modules

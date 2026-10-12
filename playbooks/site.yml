@@ -10,6 +10,10 @@
   ansible.builtin.import_playbook: proxmox/template.yml
 - name: Create the cluster VMs
   ansible.builtin.import_playbook: cluster/create_vms.yml
+- name: Make the GPU usable inside wyvern (Quick Sync, stage 3)
+  ansible.builtin.import_playbook: cluster/gpu_guest.yml
+  vars:
+    gpu_guest_allow_reboot: true # nothing runs on a freshly built VM yet
 - name: Share storage over NFS
   ansible.builtin.import_playbook: storage/nfs.yml
 - name: Install RKE2

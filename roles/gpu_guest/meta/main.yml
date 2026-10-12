@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: gpu_guest
+  author: khefernetes
+  description: "Inside a VM that received the Intel iGPU: i915 driver, firmware, media driver, and proof that /dev/dri/renderD128 works"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

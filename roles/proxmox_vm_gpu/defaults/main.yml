@@ -1,6 +1,6 @@
 ---
 # VMs that get the GPU are the cluster hosts with  vm_gpu_passthrough: true  (inventories/host_vars/<host>.yml).
-# The device itself is set in inventories/group_vars/proxmox/gpu.yml.
+# The device itself is set in inventories/group_vars/all/gpu.yml.
 proxmox_vm_gpu_pci_address: "{{ gpu_passthrough_pci_address }}"
 # Extra options for the hostpci line. pcie=1 needs the q35 machine type this role sets.
 proxmox_vm_gpu_hostpci_options: "pcie=1"

@@ -1,0 +1,144 @@
+---
+# Stage 3 of docs/runbooks/gpu-passthrough.md, inside the VM. Idempotent.
+- name: Check that the VM sees the GPU (stage 2)
+  ansible.builtin.command: "lspci -nn -d {{ gpu_passthrough_pci_id }}"
+  register: gpu_guest_lspci
+  changed_when: false
+  check_mode: false
+  failed_when: gpu_guest_lspci.stdout | length == 0
+
+- name: Find out which media driver package this Ubuntu offers
+  ansible.builtin.command: "apt-cache policy {{ gpu_guest_media_driver_preferred }}"
+  register: gpu_guest_policy
+  changed_when: false
+  check_mode: false
+
+- name: Choose the media driver package
+  ansible.builtin.set_fact:
+    gpu_guest_media_driver: >-
+      {{ gpu_guest_media_driver_fallback
+         if (gpu_guest_policy.stdout | length == 0 or 'Candidate: (none)' in gpu_guest_policy.stdout)
+         else gpu_guest_media_driver_preferred }}
+
+- name: Which kernel is running
+  ansible.builtin.command: uname -r
+  register: gpu_guest_kernel
+  changed_when: false
+  check_mode: false
+
+- name: Install the driver modules, firmware and test tools
+  ansible.builtin.apt:
+    name: "{{ gpu_guest_packages + [gpu_guest_media_driver, 'linux-modules-extra-' ~ gpu_guest_kernel.stdout] }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: gpu_guest_install_packages | bool
+  register: gpu_guest_apt
+  failed_when: false
+
+- name: Retry without the running kernel's own extra-modules package (it may be gone from the archive)
+  ansible.builtin.apt:
+    name: "{{ gpu_guest_packages + [gpu_guest_media_driver] }}"
+    state: present
+  when:
+    - gpu_guest_install_packages | bool
+    - gpu_guest_apt is failed
+  register: gpu_guest_apt_retry
+
+- name: Load the i915 driver at every boot
+  ansible.builtin.copy:
+    dest: "{{ gpu_guest_modules_load_file }}"
+    content: |
+      # Managed by khefernetes (roles/gpu_guest)
+      i915
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Is the i915 module available for the running kernel?
+  ansible.builtin.command: modinfo -n i915
+  register: gpu_guest_modinfo
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Reboot into the new kernel (the running one has no i915)
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ gpu_guest_reboot_timeout_seconds }}"
+  when:
+    - gpu_guest_modinfo.rc != 0
+    - gpu_guest_allow_reboot | bool
+
+- name: Stop with the instructions when a reboot is needed and not allowed
+  ansible.builtin.fail:
+    msg: >-
+      The running kernel ({{ gpu_guest_kernel.stdout }}) has no i915 module, but the packages for the newest kernel are now installed.
+      Reboot {{ inventory_hostname }} (a reboot takes Jellyfin down for a few minutes) and run this again:
+      make gpu-guest ARGS="-e gpu_guest_allow_reboot=true"
+  when:
+    - gpu_guest_modinfo.rc != 0
+    - not (gpu_guest_allow_reboot | bool)
+
+- name: Is the driver already loaded?
+  ansible.builtin.command: "grep -q '^i915 ' {{ gpu_guest_proc_modules }}"
+  register: gpu_guest_loaded
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Load the driver now
+  ansible.builtin.command: modprobe i915
+  register: gpu_guest_modprobe
+  changed_when: gpu_guest_modprobe.rc == 0
+  failed_when: false
+  when: gpu_guest_loaded.rc != 0
+
+- name: Wait for the render device
+  ansible.builtin.wait_for:
+    path: "{{ gpu_guest_render_node }}"
+    timeout: "{{ gpu_guest_node_wait_seconds }}"
+  failed_when: false
+
+- name: Is the render device there?
+  ansible.builtin.stat:
+    path: "{{ gpu_guest_render_node }}"
+  register: gpu_guest_node
+
+- name: Read the kernel's messages about the GPU (shown if something is wrong)
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: "set -o pipefail; dmesg | grep -i -E 'i915|drm|guc|huc|dmc' | tail -40"
+  register: gpu_guest_dmesg
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Stop with the GPU messages if there is no render device
+  ansible.builtin.fail:
+    msg: |-
+      {{ gpu_guest_render_node }} did not appear. modprobe said: {{ gpu_guest_modprobe.stderr | default('(it was not needed: the driver was already loaded)') }}
+      Kernel messages about the GPU:
+      {{ gpu_guest_dmesg.stdout }}
+      Paste all of this back. The packages stay installed; to undo the boot-time load: rm /etc/modules-load.d/khefernetes-i915.conf
+  when: not gpu_guest_node.stat.exists
+
+- name: Ask the driver what the GPU can do (VA-API)
+  ansible.builtin.command: "vainfo --display drm --device {{ gpu_guest_render_node }}"
+  register: gpu_guest_vainfo
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Read the render group id (the Jellyfin pod needs it in stage 4)
+  ansible.builtin.command: "stat -c '%G %g' {{ gpu_guest_render_node }}"
+  register: gpu_guest_render_group
+  changed_when: false
+  check_mode: false
+
+- name: Result
+  ansible.builtin.debug:
+    msg:
+      - "{{ 'GPU READY in the VM: ' ~ gpu_guest_render_node ~ ' exists (group and gid: ' ~ gpu_guest_render_group.stdout ~ ').' if gpu_guest_vainfo.rc == 0 else 'The render device exists but vainfo failed. See the lines below.' }}"
+      - "media driver package: {{ gpu_guest_media_driver }}; i915 module: {{ gpu_guest_modinfo.stdout | default('loaded after reboot') }}"
+      - "HuC/GuC messages: {{ gpu_guest_dmesg.stdout_lines | select('search', '(?i)huc|guc') | list }}"
+      - "vainfo (rc {{ gpu_guest_vainfo.rc }}): {{ ((gpu_guest_vainfo.stdout_lines + gpu_guest_vainfo.stderr_lines) | select('search', 'VAProfile(H264|HEVC)|Driver version|error|failed') | list)[:5] }}"

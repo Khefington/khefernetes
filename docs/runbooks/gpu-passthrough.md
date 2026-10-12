@@ -1,6 +1,6 @@
 # Quick Sync for Jellyfin: passing the Intel iGPU to wyvern
 
-**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is done: `make gpu-host` was applied, castellan was rebooted, and the iGPU is bound to `vfio-pci` (status READY). Stage 2 is done: wyvern is on q35 + UEFI and sees the iGPU (`lspci` shows `AlderLake-S GT1 [8086:4680]` at 01:00.0). Stage 3 starts with the read-only `make gpu-guest-discover`. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
+**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is done: `make gpu-host` was applied, castellan was rebooted, and the iGPU is bound to `vfio-pci` (status READY). Stage 2 is done: wyvern is on q35 + UEFI and sees the iGPU (`lspci` shows `AlderLake-S GT1 [8086:4680]` at 01:00.0). `make gpu-guest-discover` showed wyvern runs the generic Ubuntu kernel 6.8.0-146 but has no `i915` module and no `linux-firmware`; stage 3 (`make gpu-guest`) installs them. Stage 3 is written and waiting to be applied. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
 
 ## Why this is needed
 Jellyfin runs in a container on wyvern, which is a VM. A VM cannot see castellan's integrated GPU unless castellan hands it over (PCIe passthrough with VFIO). After that the VM has its own `/dev/dri`, and the Jellyfin pod can be given that device.
@@ -12,7 +12,7 @@ The i9-12900K's UHD 770 does hardware H.264, HEVC (also 10-bit) and VP9 decoding
 | 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | done |
 | 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | done |
 | 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`), on the q35 machine type with UEFI (OVMF); applied by `make vms` | wyvern only (restarted) | done |
-| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo`. First `make gpu-guest-discover` (read-only report) | wyvern only | in progress |
+| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo`. First `make gpu-guest-discover` (read-only report) | wyvern only | ready to run |
 | 4 | Jellyfin pod: mount `/dev/dri`, add the `render` group, set `jellyfin_encoding_config` (QSV), prove with an ffmpeg test | the Jellyfin deployment | last |
 
 The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.8.12-43-pve, kernel line `quiet`, the IOMMU is already active (19 groups), the iGPU (`0000:00:02.0`, `8086:4680`) is alone in IOMMU group 0, no monitor is connected, and `vfio-pci` is available. So the kernel options go in `/etc/default/grub`.
@@ -48,6 +48,18 @@ What to check afterwards (on wyvern, over SSH, or `ansible wyvern -a ...`): `lsp
 - *wyvern does not start* (check `qm start 202`, `journalctl -b | grep -i vfio`): usually the iGPU not on `vfio-pci` after a host reboot, a `BAR 0: can't reserve` error (risk 11 below), or not enough free host memory (wyvern's 16 GB is now pinned; the other VMs and castellan need about 10 GB more).
 - *wyvern boots but is unreachable*: the switch from the old BIOS/i440fx setup to UEFI/q35 changes how the guest sees its disk and network card. The Ubuntu cloud image supports UEFI and cloud-init names the interface `eth0` by its MAC address, so this should be fine, but it is the one step that changes how the existing VM boots. Revert: `qm stop 202; qm set 202 --delete hostpci0,efidisk0 --bios seabios --machine pc; qm start 202`. Its disk was not changed.
 - *Proxmox says the device is in use*: the iGPU is not on `vfio-pci` yet (run `make gpu-host`).
+
+## Stage 3 in detail: `make gpu-guest`
+The report (`make gpu-guest-discover`) showed the VM runs the standard `generic` kernel, not a stripped one, but `i915` is not there: Ubuntu keeps GPU drivers in `linux-modules-extra`, which the cloud image does not install, and `linux-firmware` is missing. `make gpu-guest` (role `gpu_guest`, only for VMs with `vm_gpu_passthrough: true`):
+1. Checks the VM sees the device `8086:4680`.
+2. Installs `linux-image-generic` (pulls in `linux-modules-extra` and `linux-firmware`, and keeps them in step with kernel updates), `linux-modules-extra` for the running kernel, `vainfo`, `intel-gpu-tools` and the Intel media driver (`intel-media-va-driver-non-free` when the repositories offer it, otherwise the free one).
+3. Writes `/etc/modules-load.d/khefernetes-i915.conf` so the driver loads at every boot.
+4. If the running kernel still has no `i915`, it stops and tells you to reboot (`make gpu-guest ARGS="-e gpu_guest_allow_reboot=true"` reboots wyvern for you; Jellyfin is down meanwhile). With the same kernel version installed as is running, no reboot should be needed.
+5. Loads the driver (`modprobe i915`), waits for `/dev/dri/renderD128`, runs `vainfo`, and prints the **render group id** (the Jellyfin pod needs it in stage 4) and the GuC/HuC firmware messages. If the device does not appear it prints the kernel messages and stops.
+
+Nothing in Kubernetes changes and Jellyfin keeps running while the driver loads. `make site` runs this step after `make vms`, so a rebuild gets it too (allowing the reboot, since nothing runs on the new VM yet).
+
+*If something goes wrong:* the first time the driver binds a passthrough GPU is the moment risk 4 (no clean reset) can show. Messages like `ROM ... can't claim; no compatible bridge window` in the kernel log are harmless. If wyvern hangs or the render device never appears: `qm reset 202` on castellan restarts it; paste me the kernel messages the play prints.
 
 ## Risks, in plain words
 1. **The host loses the iGPU.** A monitor plugged into castellan goes blank once VFIO owns the GPU. Everything is still reachable by SSH and the web UI, but if the network ever breaks you would have no local screen. Keep a second way in (for example a USB-Ethernet adapter or a cheap GPU) in mind before relying on this.

@@ -2,7 +2,7 @@
 # Default run = checks and a plan only; nothing is written. Writing needs: -e gpu_passthrough_prepare=true
 gpu_passthrough_prepare: false
 
-# The device to hand over (set in inventories/group_vars/proxmox/gpu.yml).
+# The device to hand over (set in inventories/group_vars/all/gpu.yml).
 gpu_passthrough_pci_address: "0000:00:02.0"
 gpu_passthrough_pci_id: "8086:4680"
 

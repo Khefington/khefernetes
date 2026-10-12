@@ -1,0 +1,10 @@
+---
+# Stage 3: inside the VMs that received the iGPU (vm_gpu_passthrough: true): i915 driver, firmware, media driver,
+# and proof that /dev/dri/renderD128 works. Does not reboot unless  -e gpu_guest_allow_reboot=true.
+#   ansible-playbook playbooks/cluster/gpu_guest.yml
+- name: Make the GPU usable inside the VMs that received it
+  hosts: anvil_cluster
+  gather_facts: false
+  roles:
+    - role: gpu_guest
+      when: vm_gpu_passthrough | default(false) | bool
