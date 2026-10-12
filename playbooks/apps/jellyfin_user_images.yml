@@ -1,0 +1,12 @@
+---
+# Profile pictures: are they linked to their users? (Jellyfin 10.11 can drop the link on a restore.)
+#   make jellyfin-profile-check      read-only: reports each user's state
+#   make jellyfin-profile-fix        re-attaches pictures that are on disk but not linked
+- name: Check or fix profile pictures
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Look at the users and their picture files
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: user_images.yml

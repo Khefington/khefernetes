@@ -1,0 +1,53 @@
+---
+# One user: is their picture file on disk, and is it linked to the user?
+- name: Work out the state
+  ansible.builtin.set_fact:
+    jellyfin_user_image_file: "{{ jellyfin_user_images_files.get(jellyfin_user.Name, '') }}"
+    jellyfin_user_image_linked: "{{ jellyfin_user.PrimaryImageTag is defined and jellyfin_user.PrimaryImageTag | length > 0 }}"
+
+- name: Remember the file type
+  ansible.builtin.set_fact:
+    jellyfin_user_image_mime: "{{ jellyfin_user_images_types.get((jellyfin_user_image_file | splitext)[1] | lower | replace('.', ''), '') }}"
+  when: jellyfin_user_image_file | length > 0
+
+- name: Needs re-attaching?
+  ansible.builtin.set_fact:
+    jellyfin_user_image_needs_fix: "{{ jellyfin_user_image_file | length > 0 and not jellyfin_user_image_linked and jellyfin_user_image_mime | default('') | length > 0 }}"
+
+- name: Read the picture file from the pod (base64, the form Jellyfin's upload wants)
+  ansible.builtin.command:
+    cmd: "{{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin -- base64 -w0 {{ jellyfin_user_image_file }}"
+  register: jellyfin_user_image_b64
+  changed_when: false
+  no_log: true
+  when:
+    - jellyfin_user_images_apply | bool
+    - jellyfin_user_image_needs_fix
+
+- name: Upload it for this user (this re-creates the database link; the file is rewritten in place)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/UserImage?userId={{ jellyfin_user.Id }}"
+    method: POST
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+      Content-Type: "{{ jellyfin_user_image_mime }}"
+    body: "{{ jellyfin_user_image_b64.stdout }}"
+    body_format: raw
+    status_code: 204
+  changed_when: true
+  no_log: true
+  when:
+    - jellyfin_user_images_apply | bool
+    - jellyfin_user_image_needs_fix
+
+- name: Note what happened
+  ansible.builtin.set_fact:
+    jellyfin_user_images_fixed: "{{ (jellyfin_user_images_fixed | default([])) + ([jellyfin_user.Name] if (jellyfin_user_images_apply | bool and jellyfin_user_image_needs_fix) else []) }}"
+    jellyfin_user_images_report: >-
+      {{ (jellyfin_user_images_report | default([])) + [
+           jellyfin_user.Name ~ ': ' ~
+           ('picture is linked and showing' if jellyfin_user_image_linked
+            else ('picture file ' ~ jellyfin_user_image_file ~ ' has an unsupported type' if jellyfin_user_image_file | length > 0 and jellyfin_user_image_mime | default('') | length == 0
+            else (('picture file found but NOT linked to the user: re-attached just now' if jellyfin_user_images_apply | bool else 'picture file found but NOT linked to the user: run make jellyfin-profile-fix') if jellyfin_user_image_file | length > 0
+            else 'no picture file on disk (nothing to restore; upload one in the UI)')))
+         ] }}

@@ -18,3 +18,21 @@ jellyfin_gpu_ffmpeg: /usr/lib/jellyfin-ffmpeg/ffmpeg
 jellyfin_gpu_test_file: /tmp/khef-gpu-test.mp4
 jellyfin_log_dir: /config/log
 jellyfin_transcode_check_count: 3
+
+# make jellyfin-restore (see roles/jellyfin/tasks/restore.yml)
+jellyfin_restore_archive: "" # empty = the newest backup Jellyfin can see; or a file name such as jellyfin-backup-20261012125828.zip
+jellyfin_restore_confirm: "" # -e jellyfin_restore_confirm=RESTORE skips the question (for scripts)
+jellyfin_restore_provision: true # run `make jellyfin-provision` afterwards (re-applies the settings from Git, refreshes the backup key)
+jellyfin_restore_allow_newer: false # -e jellyfin_restore_allow_newer=true: restore a zip made by a NEWER Jellyfin (not recommended)
+jellyfin_restore_pause: 20 # seconds to let Jellyfin shut down before waiting for it to come back
+jellyfin_restore_retries: 60 # waits for Jellyfin to answer: 60 x 5 s = 5 minutes
+# Profile pictures (make jellyfin-profile-check / jellyfin-profile-fix)
+jellyfin_user_images_apply: false # true = re-attach pictures that are on disk but no longer linked to their user
+jellyfin_user_images_search_root: /config # the pod folder searched for  */users/<name>/profile.*
+jellyfin_user_images_types:
+  png: image/png
+  jpg: image/jpeg
+  jpeg: image/jpeg
+  gif: image/gif
+  webp: image/webp
+  bmp: image/bmp

@@ -1,0 +1,92 @@
+---
+# Profile pictures after a restore.
+# Jellyfin 10.11 has a restore bug (https://github.com/jellyfin/jellyfin/issues/15829): the picture FILE comes back
+# (/config/config/users/<name>/profile.png) but the database row that links it to the user loses its user, so the
+# user shows the default avatar. Uploading the same file again through the API re-creates the link.
+# Read-only by default (jellyfin_user_images_apply: false); `make jellyfin-profile-fix` or `make jellyfin-restore` apply it.
+- name: Find Jellyfin and its API key
+  ansible.builtin.include_tasks: api_endpoint.yml
+
+- name: Stop with a helpful message if there is no API key yet
+  ansible.builtin.assert:
+    that: jellyfin_api_key | length > 0
+    fail_msg: "There is no API key yet. Run `make jellyfin-provision` first (it creates the key and the Secret 'jellyfin-api')."
+    quiet: true
+
+- name: Find the profile pictures stored in the pod
+  ansible.builtin.command:
+    cmd: >-
+      {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin --
+      sh -c 'find {{ jellyfin_user_images_search_root }} -maxdepth 6 -type f -path "*/users/*/profile.*" 2>/dev/null; true'
+  register: jellyfin_user_images_found
+  changed_when: false
+  check_mode: false
+
+- name: Remember which user each file belongs to
+  ansible.builtin.set_fact:
+    jellyfin_user_images_files: >-
+      {{ dict(jellyfin_user_images_found.stdout_lines | map('regex_replace', '^.*/([^/]+)/profile\.[^/]*$', '\1')
+              | zip(jellyfin_user_images_found.stdout_lines)) }}
+
+- name: Read the users
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Users"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+    status_code: [200, 401]
+  register: jellyfin_user_images_users
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: The stored API key no longer works
+  ansible.builtin.debug:
+    msg:
+      - "Jellyfin refused the stored API key. After a restore, the key in the cluster Secret belongs to the database that was replaced."
+      - "Run `make jellyfin-provision` (it re-creates the Secret from the restored database), then `make jellyfin-profile-fix`."
+  when: jellyfin_user_images_users.status == 401
+
+- name: Nothing more to do without a working key
+  ansible.builtin.meta: end_host
+  when: jellyfin_user_images_users.status == 401
+
+- name: Look at each user
+  ansible.builtin.include_tasks: user_image_one.yml
+  loop: "{{ jellyfin_user_images_users.json }}"
+  loop_control:
+    loop_var: jellyfin_user
+    label: "{{ jellyfin_user.Name }}"
+
+- name: Read the users again
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Users"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+  register: jellyfin_user_images_after
+  changed_when: false
+  check_mode: false
+  no_log: true
+  when: jellyfin_user_images_apply | bool
+
+- name: Picture files that belong to nobody
+  ansible.builtin.debug:
+    msg: "{{ item.value }} has no matching Jellyfin user ('{{ item.key }}'). Nothing was done with it."
+  loop: "{{ jellyfin_user_images_files | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key not in (jellyfin_user_images_users.json | map(attribute='Name') | list)
+
+- name: Summary
+  ansible.builtin.debug:
+    msg: "{{ jellyfin_user_images_report | default([]) }}"
+
+- name: Make sure every re-attached picture is now linked
+  ansible.builtin.assert:
+    that: >-
+      jellyfin_user_images_after.json | selectattr('Name', 'in', jellyfin_user_images_fixed | default([]))
+      | map(attribute='PrimaryImageTag', default='') | select('equalto', '') | list | length == 0
+    fail_msg: "Jellyfin accepted the upload but a user still has no picture. Look at the pod log: kubectl -n media logs deploy/jellyfin --tail=80"
+    quiet: true
+  when:
+    - jellyfin_user_images_apply | bool
+    - jellyfin_user_images_fixed | default([]) | length > 0

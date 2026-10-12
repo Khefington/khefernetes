@@ -1,0 +1,147 @@
+---
+# Restore Jellyfin from one of its own backup zips (the ones the nightly job writes to the HDD; Jellyfin sees that folder
+# as its backup folder, so the same list is on Dashboard > Backups). Same thing as clicking Restore there, but:
+#   - the newest backup is chosen for you (or name one with -e jellyfin_restore_archive=jellyfin-backup-<date>.zip)
+#   - it checks the zip first (has a database, not from a newer Jellyfin) and asks you to type RESTORE
+#   - the playbook then re-applies the settings from Git and re-attaches profile pictures (a Jellyfin restore bug drops that link)
+- name: Find Jellyfin and its API key
+  ansible.builtin.include_tasks: api_endpoint.yml
+
+- name: Stop with a helpful message if there is no API key yet
+  ansible.builtin.assert:
+    that: jellyfin_api_key | length > 0
+    fail_msg: >-
+      There is no API key yet, so the restore cannot be started from here. Run `make jellyfin-provision` first
+      (it creates the key and the Secret 'jellyfin-api'), or use Dashboard > Backups > Restore in the web UI.
+    quiet: true
+
+- name: Ask Jellyfin which version is running
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/System/Info"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+  register: jellyfin_restore_info
+  changed_when: false
+  no_log: true
+
+- name: Ask Jellyfin which backups it can see
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Backup"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+  register: jellyfin_restore_list
+  changed_when: false
+  no_log: true
+
+- name: Stop if there are no backups
+  ansible.builtin.assert:
+    that: jellyfin_restore_list.json | length > 0
+    fail_msg: "Jellyfin sees no backup zips. They live on the HDD in <hdd>/data/backups/jellyfin (mounted at /config/data/backups in the pod)."
+    quiet: true
+
+- name: Work out which backup to use (newest first)
+  ansible.builtin.set_fact:
+    jellyfin_restore_candidates: "{{ jellyfin_restore_list.json | sort(attribute='DateCreated', reverse=true) }}"
+    jellyfin_restore_wanted: >-
+      {{ (jellyfin_restore_archive | basename) ~ ('' if (jellyfin_restore_archive | basename) is search('[.]zip$') else '.zip')
+         if jellyfin_restore_archive | length > 0 else '' }}
+
+- name: Match the name
+  ansible.builtin.set_fact:
+    jellyfin_restore_names: "{{ jellyfin_restore_candidates | map(attribute='Path') | map('basename') | list }}"
+
+- name: Stop if the named zip is not there
+  ansible.builtin.assert:
+    that: jellyfin_restore_wanted | length == 0 or jellyfin_restore_wanted in jellyfin_restore_names
+    fail_msg: "'{{ jellyfin_restore_wanted }}' is not among the backups Jellyfin can see: {{ jellyfin_restore_names }}"
+    quiet: true
+
+- name: Pick it
+  ansible.builtin.set_fact:
+    jellyfin_restore_pick: "{{ jellyfin_restore_names.index(jellyfin_restore_wanted) if jellyfin_restore_wanted | length > 0 else 0 }}"
+
+- name: Remember the chosen backup
+  ansible.builtin.set_fact:
+    jellyfin_restore_chosen: "{{ jellyfin_restore_candidates[jellyfin_restore_pick | int] }}"
+    jellyfin_restore_chosen_name: "{{ jellyfin_restore_names[jellyfin_restore_pick | int] }}"
+
+- name: The backups Jellyfin can see (* = the one that will be restored)
+  ansible.builtin.debug:
+    msg: >-
+      {{ '*' if item.Path | basename == jellyfin_restore_chosen_name else ' ' }} {{ item.Path | basename }}
+      taken {{ item.DateCreated }} by Jellyfin {{ item.ServerVersion }}
+      {{ '' if item.Options.Database | default(false) else '(NO DATABASE in this zip)' }}
+  loop: "{{ jellyfin_restore_candidates }}"
+  loop_control:
+    label: "{{ item.Path | basename }}"
+
+- name: Check the chosen zip holds a database
+  ansible.builtin.assert:
+    that: jellyfin_restore_chosen.Options.Database | default(false)
+    fail_msg: "{{ jellyfin_restore_chosen_name }} holds no database (users, watch history), so there is nothing useful to restore. Name another zip with -e jellyfin_restore_archive=<file>."
+    quiet: true
+
+- name: Check the chosen zip is not from a newer Jellyfin
+  ansible.builtin.assert:
+    that: jellyfin_restore_allow_newer | bool or jellyfin_restore_chosen.ServerVersion is version(jellyfin_restore_info.json.Version, '<=')
+    fail_msg: >-
+      {{ jellyfin_restore_chosen_name }} was made by Jellyfin {{ jellyfin_restore_chosen.ServerVersion }}, newer than the running
+      {{ jellyfin_restore_info.json.Version }}; a database from a newer version may not load. Name an older zip with
+      -e jellyfin_restore_archive=<file> (or -e jellyfin_restore_allow_newer=true, not recommended).
+    quiet: true
+
+- name: Ask for confirmation
+  ansible.builtin.pause:
+    prompt: >-
+      This REPLACES Jellyfin's database (users, watch history, display settings) and settings files with
+      {{ jellyfin_restore_chosen_name }} (taken {{ jellyfin_restore_chosen.DateCreated }}). Anything changed since then is lost.
+      Type RESTORE to continue
+  register: jellyfin_restore_answer
+  when: jellyfin_restore_confirm | length == 0
+
+- name: Stop unless the word was typed exactly
+  ansible.builtin.assert:
+    that: (jellyfin_restore_confirm if jellyfin_restore_confirm | length > 0 else jellyfin_restore_answer.user_input) == 'RESTORE'
+    fail_msg: Nothing was restored.
+    quiet: true
+
+- name: Start the restore (Jellyfin restarts itself to apply it)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Backup/Restore"
+    method: POST
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+    body_format: json
+    body:
+      ArchiveFileName: "{{ jellyfin_restore_chosen_name }}"
+    status_code: 204
+  changed_when: true
+  no_log: true
+
+- name: Let Jellyfin shut down
+  ansible.builtin.pause:
+    seconds: "{{ jellyfin_restore_pause }}"
+
+- name: Wait for Jellyfin to come back (a restore takes a minute or two)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/System/Info/Public"
+  register: jellyfin_restore_public
+  until: jellyfin_restore_public.status is defined and jellyfin_restore_public.status == 200
+  retries: "{{ jellyfin_restore_retries }}"
+  delay: 5
+  failed_when: false
+  changed_when: false
+
+- name: Stop if it never came back
+  ansible.builtin.assert:
+    that:
+      - jellyfin_restore_public.status is defined
+      - jellyfin_restore_public.status == 200
+    fail_msg: "Jellyfin did not answer after the restore. Look at: kubectl -n {{ media_namespace }} logs deploy/jellyfin --tail=100"
+    quiet: true
+
+- name: Restored
+  ansible.builtin.debug:
+    msg:
+      - "Restored {{ jellyfin_restore_chosen_name }}. Jellyfin {{ jellyfin_restore_public.json.Version | default('?') }} is answering again."
+      - "{{ 'Next: the playbook re-applies the settings from Git and re-attaches profile pictures.' if jellyfin_restore_provision | bool else 'Next, run: make jellyfin-provision && make jellyfin-profile-fix' }}"

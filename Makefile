@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -74,6 +74,12 @@ jellyfin-gpu-test: ## Stage 4c: prove Quick Sync works inside the running Jellyf
 	$(PLAYBOOK) playbooks/apps/jellyfin_gpu_test.yml
 jellyfin-transcode-check: ## READ-ONLY: did the latest playbacks use the GPU? (reads Jellyfin's transcode logs)
 	$(PLAYBOOK) playbooks/apps/jellyfin_transcode_check.yml
+jellyfin-restore: ## Restore Jellyfin from its newest backup (asks you to type RESTORE), then re-provision + re-attach pictures
+	$(PLAYBOOK) playbooks/apps/jellyfin_restore.yml
+jellyfin-profile-check: ## READ-ONLY: are users' profile pictures linked? (shows picture files found in the pod)
+	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml
+jellyfin-profile-fix: ## Re-attach profile pictures that are on disk but no longer linked to their user
+	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml -e jellyfin_user_images_apply=true
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
 	$(PLAYBOOK) playbooks/apps/jellyfin_provision.yml
 jellyfin-backup: ## Install the nightly Jellyfin backup job

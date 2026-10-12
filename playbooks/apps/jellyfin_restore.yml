@@ -1,0 +1,34 @@
+---
+# Restore Jellyfin from its newest backup (or the one you name), then put things back the way the repo describes them.
+#   make jellyfin-restore
+#   make jellyfin-restore ARGS="-e jellyfin_restore_archive=jellyfin-backup-20261012125828.zip"
+#   make jellyfin-restore ARGS="-e jellyfin_restore_provision=false"    (restore only; no provision afterwards)
+# Needs `make site` (or at least `make jellyfin` + `make jellyfin-provision`) to have run, so the API key exists.
+# Steps: 1) pick + check + confirm + restore   2) make jellyfin-provision   3) re-attach profile pictures.
+- name: Restore Jellyfin from a backup
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Pick, check, confirm and restore
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: restore.yml
+
+# The restore replaced the database, including the API key table, so the backup job's key is re-created from the restored one.
+- name: Re-apply the settings from Git
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - role: jellyfin_provision
+      when: jellyfin_restore_provision | default(true) | bool
+
+- name: Re-attach profile pictures
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Link every picture file to its user again (Jellyfin restore bug)
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: user_images.yml
+      vars:
+        jellyfin_user_images_apply: true

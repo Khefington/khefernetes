@@ -104,6 +104,19 @@ def main(path):
         users[str(pick(r, "Id"))] = pick(r, "Username", "Name")
     print(f"\n  Users: {sorted(str(u) for u in users.values())}")
 
+    # Profile pictures live in two places: the file (Config/users/<name>/profile.*) and a database row in ImageInfos that
+    # ties the file to the user. Jellyfin 10.11 restores the file but can lose the user on that row (jellyfin issue #15829).
+    infos = rows_of(z, "ImageInfos")
+    if infos is not None:
+        user_rows = [r for r in infos if "/users/" in str(pick(r, "Path") or "").replace("\\", "/").lower()]
+        print(f"\n  Profile-picture rows in ImageInfos: {len(user_rows)}")
+        for r in user_rows:
+            owner = pick(r, "UserId")
+            print(f"    {pick(r, 'Path')}  -> user: {users.get(str(owner), owner) if owner else 'NONE (not linked)'}")
+        if not user_rows and pics:
+            print("    The zip has picture FILES but no database row for them: after a restore the picture will not show\n"
+                  "    until it is re-attached (`make jellyfin-profile-fix`, which `make jellyfin-restore` runs for you).")
+
     ud = rows_of(z, "UserData")
     if ud is not None:
         print("\n  Watch state per user (UserData):")
