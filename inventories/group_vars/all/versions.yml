@@ -15,3 +15,7 @@ storage_test_image: docker.io/library/busybox:1.37.0
 #   curl -sL https://raw.githubusercontent.com/metallb/metallb/<version>/config/manifests/metallb-native.yaml | sha256sum
 metallb_version: v0.16.1
 metallb_sha256: bf25feebb7582ca7df845efd52ffbc2960d6cbf4cfc972f47fded9f788b67f0b
+
+# Intel GPU device plugin (hands /dev/dri to pods that ask for gpu.intel.com/i915).
+# https://github.com/intel/intel-device-plugins-for-kubernetes/releases  The image tag follows the release number.
+intel_gpu_plugin_version: "0.36.0"

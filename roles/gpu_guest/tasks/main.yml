@@ -135,6 +135,15 @@
   changed_when: false
   check_mode: false
 
+- name: Check the render group id is the one the repo tells Kubernetes about
+  ansible.builtin.assert:
+    that: (gpu_guest_render_group.stdout.split()[1] | int) == (gpu_render_gid | int)
+    quiet: true
+    fail_msg: >-
+      The render group in {{ inventory_hostname }} has id {{ gpu_guest_render_group.stdout.split()[1] }}, but inventories/group_vars/all/gpu.yml
+      says gpu_render_gid: {{ gpu_render_gid }}. Set gpu_render_gid to {{ gpu_guest_render_group.stdout.split()[1] }}, otherwise the Jellyfin pod
+      joins the wrong group and cannot open the GPU.
+
 - name: Result
   ansible.builtin.debug:
     msg:

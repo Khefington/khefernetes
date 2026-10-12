@@ -1,6 +1,7 @@
 ---
 # The device the VM must see (group_vars/all/gpu.yml).
 gpu_passthrough_pci_id: "8086:4680"
+gpu_render_gid: 992 # group_vars/all/gpu.yml
 # The i915 driver lives in linux-modules-extra, which the generic kernel metapackage pulls in together with linux-firmware.
 gpu_guest_packages:
   - linux-image-generic

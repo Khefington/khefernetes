@@ -1,0 +1,10 @@
+---
+intel_gpu_plugin_namespace: intel-gpu-plugin
+intel_gpu_plugin_manifest_path: "{{ k8s_app_manifest_dir }}/intel-gpu-plugin.yaml"
+# How many containers may use the one GPU at the same time. Jellyfin is one; the proof test (and a second app later) another.
+intel_gpu_plugin_shared_dev_num: 2
+intel_gpu_plugin_rollout_timeout: 300s
+# Nodes that have the GPU: the cluster hosts with vm_gpu_passthrough: true (inventories/host_vars).
+intel_gpu_plugin_nodes: >-
+  {{ groups['anvil_cluster'] | map('extract', hostvars) | selectattr('vm_gpu_passthrough', 'defined')
+     | selectattr('vm_gpu_passthrough') | map(attribute='inventory_hostname') | list }}

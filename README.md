@@ -22,7 +22,7 @@ make site                                   # the whole build, in order
 | Fix media copied one folder too deep | `make flatten-media` then `make flatten-media APPLY=1` |
 | Jellyfin trickplay / file-access problems | `make diagnose-jellyfin` |
 | Back up Jellyfin now | `make backup-now` |
-| Plan Quick Sync (Intel iGPU) for Jellyfin | `make gpu-discover` (read-only), then `make gpu-host` (stage 1: plan, then apply), see `docs/runbooks/gpu-passthrough.md` |
+| Plan Quick Sync (Intel iGPU) for Jellyfin | `make gpu-discover` (read-only), then `make gpu-host`, `make vms`, `make gpu-guest`, `make gpu-plugin`, `make jellyfin`, `make jellyfin-gpu-test`, `make jellyfin-provision` (stages 1-4), see `docs/runbooks/gpu-passthrough.md` |
 | Look inside a Jellyfin backup zip | `python3 scripts/inspect-jellyfin-backup.py <zip>` |
 | Make `jellyfin.home.lan` work on every device | `make dns`, then set the router DNS to castellan (`docs/runbooks/dns.md`) |
 | Add a library (e.g. audiobooks) | add it to `media_libraries`, then `make nfs` |

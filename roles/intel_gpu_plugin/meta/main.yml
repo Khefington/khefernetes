@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: intel_gpu_plugin
+  author: khefernetes
+  description: "Intel GPU device plugin: advertises gpu.intel.com/i915 on the nodes that have the iGPU, so pods can request it unprivileged"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

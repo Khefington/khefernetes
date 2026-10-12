@@ -9,3 +9,10 @@ jellyfin_memory_request: 2Gi
 jellyfin_memory_limit: 10Gi # wyvern has 16 GiB; leave room for the OS, RKE2 and other pods
 jellyfin_rollout_timeout: 600s
 jellyfin_manifest_path: "{{ k8s_app_manifest_dir }}/jellyfin.yaml"
+# Quick Sync: on automatically when a VM in the inventory has vm_gpu_passthrough: true. The pod then asks for the GPU
+# (gpu.intel.com/i915) and joins the render group. Force it off with -e jellyfin_gpu_enabled=false.
+jellyfin_gpu_enabled: >-
+  {{ (groups['anvil_cluster'] | map('extract', hostvars) | selectattr('vm_gpu_passthrough', 'defined')
+      | selectattr('vm_gpu_passthrough') | list | length) > 0 }}
+jellyfin_gpu_ffmpeg: /usr/lib/jellyfin-ffmpeg/ffmpeg
+jellyfin_gpu_test_file: /tmp/khef-gpu-test.mp4

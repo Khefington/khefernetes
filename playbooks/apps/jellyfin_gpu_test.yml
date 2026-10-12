@@ -1,0 +1,12 @@
+---
+# Stage 4c: prove Quick Sync works inside the running Jellyfin pod. Changes nothing in Jellyfin.
+#   ansible-playbook playbooks/apps/jellyfin_gpu_test.yml
+# Skips itself (with a note) when no VM in the inventory has vm_gpu_passthrough: true.
+- name: Test the GPU inside the Jellyfin pod
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Run the checks
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: gpu_test.yml

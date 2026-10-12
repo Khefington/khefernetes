@@ -9,8 +9,8 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
-        proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin
+        proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,8 @@ gpu-guest-discover: ## READ-ONLY report from inside wyvern: kernel, i915 driver,
 	$(PLAYBOOK) playbooks/cluster/gpu_guest_discover.yml
 gpu-guest: ## Stage 3: i915 driver, firmware and media driver inside wyvern; proves /dev/dri works (no reboot unless ARGS="-e gpu_guest_allow_reboot=true")
 	$(PLAYBOOK) playbooks/cluster/gpu_guest.yml
+gpu-plugin: ## Stage 4a: Intel GPU device plugin in the cluster (pods can then request the GPU)
+	$(PLAYBOOK) playbooks/cluster/gpu_plugin.yml
 dns: ## DNS server on castellan: *.home.lan -> the ingress (then point the router at castellan)
 	$(PLAYBOOK) playbooks/proxmox/dns.yml
 vms: ## Clone the template into the cluster VMs
@@ -68,6 +70,8 @@ k8s-storage: ## Namespace, NFS volumes, local-path provisioner, then a self-test
 	$(PLAYBOOK) playbooks/storage/kubernetes.yml
 jellyfin: ## Deploy Jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin.yml
+jellyfin-gpu-test: ## Stage 4c: prove Quick Sync works inside the running Jellyfin pod (ffmpeg QSV encode/decode)
+	$(PLAYBOOK) playbooks/apps/jellyfin_gpu_test.yml
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
 	$(PLAYBOOK) playbooks/apps/jellyfin_provision.yml
 jellyfin-backup: ## Install the nightly Jellyfin backup job

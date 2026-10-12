@@ -1,0 +1,49 @@
+---
+# Runs on the first control plane node (it has kubectl). Does nothing when no VM has vm_gpu_passthrough.
+- name: Install the Intel GPU device plugin
+  when: intel_gpu_plugin_nodes | length > 0
+  block:
+    - name: Create the manifest folder
+      ansible.builtin.file:
+        path: "{{ k8s_app_manifest_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the manifest
+      ansible.builtin.template:
+        src: intel-gpu-plugin.yaml.j2
+        dest: "{{ intel_gpu_plugin_manifest_path }}"
+        mode: "0644"
+
+    - name: Kubectl apply
+      ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ intel_gpu_plugin_manifest_path }}"
+      register: intel_gpu_plugin_apply
+      changed_when: intel_gpu_plugin_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+    - name: Wait for the plugin pods
+      ansible.builtin.command: >-
+        {{ kubectl_cmd }} -n {{ intel_gpu_plugin_namespace }} rollout status daemonset/intel-gpu-plugin
+        --timeout={{ intel_gpu_plugin_rollout_timeout }}
+      changed_when: false
+      check_mode: false
+
+    - name: Wait until each GPU node advertises the GPU
+      ansible.builtin.command: >-
+        {{ kubectl_cmd }} get node {{ item }}
+        -o jsonpath='{.status.allocatable.gpu\.intel\.com/i915}'
+      loop: "{{ intel_gpu_plugin_nodes }}"
+      register: intel_gpu_plugin_alloc
+      until: intel_gpu_plugin_alloc.stdout | trim | int > 0
+      retries: 24
+      delay: 5
+      changed_when: false
+      check_mode: false
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.item }} offers {{ item.stdout }} share(s) of the GPU (gpu.intel.com/i915).
+          Pods ask for it with  resources.limits: gpu.intel.com/i915: 1.
+      loop: "{{ intel_gpu_plugin_alloc.results }}"
+      loop_control:
+        label: "{{ item.item }}"

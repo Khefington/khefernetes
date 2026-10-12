@@ -1,0 +1,9 @@
+---
+# Stage 4a: the Intel GPU device plugin, so pods can use the GPU without being privileged.
+#   ansible-playbook playbooks/cluster/gpu_plugin.yml
+# Needs the cluster (cluster/rke2.yml) and the GPU inside wyvern (cluster/gpu_guest.yml).
+- name: Intel GPU device plugin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - intel_gpu_plugin

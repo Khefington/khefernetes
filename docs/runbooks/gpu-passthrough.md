@@ -12,8 +12,8 @@ The i9-12900K's UHD 770 does hardware H.264, HEVC (also 10-bit) and VP9 decoding
 | 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | done |
 | 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | done |
 | 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`), on the q35 machine type with UEFI (OVMF); applied by `make vms` | wyvern only (restarted) | done |
-| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo`. First `make gpu-guest-discover` (read-only report) | wyvern only | ready to run |
-| 4 | Jellyfin pod: mount `/dev/dri`, add the `render` group, set `jellyfin_encoding_config` (QSV), prove with an ffmpeg test | the Jellyfin deployment | last |
+| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo`. First `make gpu-guest-discover` (read-only report) | wyvern only | done |
+| 4 | Intel GPU device plugin in the cluster (`make gpu-plugin`); Jellyfin pod asks for the GPU and joins the `render` group (`make jellyfin`); ffmpeg proof (`make jellyfin-gpu-test`); QSV settings (`make jellyfin-provision`) | the Jellyfin deployment | ready to run |
 
 The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.8.12-43-pve, kernel line `quiet`, the IOMMU is already active (19 groups), the iGPU (`0000:00:02.0`, `8086:4680`) is alone in IOMMU group 0, no monitor is connected, and `vfio-pci` is available. So the kernel options go in `/etc/default/grub`.
 
@@ -60,6 +60,18 @@ The report (`make gpu-guest-discover`) showed the VM runs the standard `generic`
 Nothing in Kubernetes changes and Jellyfin keeps running while the driver loads. `make site` runs this step after `make vms`, so a rebuild gets it too (allowing the reboot, since nothing runs on the new VM yet).
 
 *If something goes wrong:* the first time the driver binds a passthrough GPU is the moment risk 4 (no clean reset) can show. Messages like `ROM ... can't claim; no compatible bridge window` in the kernel log are harmless. If wyvern hangs or the render device never appears: `qm reset 202` on castellan restarts it; paste me the kernel messages the play prints.
+
+## Stage 4 in detail
+Why a device plugin and not "just mount /dev/dri": a container that is not privileged is blocked by the container runtime from opening a device file, even when the file is mounted into it. Intel's GPU device plugin (a small DaemonSet, version pinned in `versions.yml`) tells Kubernetes that wyvern has a `gpu.intel.com/i915` resource and, when a pod asks for it, makes the runtime allow exactly `/dev/dri/card0` and `renderD128` for that container. Jellyfin stays unprivileged, non-root, with all capabilities dropped.
+1. **`make gpu-plugin`** installs the plugin in its own namespace (`intel-gpu-plugin`), only on nodes whose VM has `vm_gpu_passthrough: true`, then waits until the node advertises the GPU (2 shares: Jellyfin plus the test).
+2. **`make jellyfin`** re-applies the Jellyfin manifest. With a GPU VM in the inventory (`jellyfin_gpu_enabled` follows `vm_gpu_passthrough` automatically) the pod gets `resources.limits: gpu.intel.com/i915: 1` and `supplementalGroups: [992]` (`gpu_render_gid` in `group_vars/all/gpu.yml`; `make gpu-guest` checks it still matches the VM). The pod restarts once: Jellyfin is down for a minute or two, its data is untouched.
+3. **`make jellyfin-gpu-test`** runs Jellyfin's own ffmpeg inside the pod: H.264 encode, low-power H.264 encode (needs the HuC firmware), HEVC encode, H.264 and HEVC decode, all on the GPU, plus an optional HDR tone-mapping probe. It stops with the details if a required check fails.
+4. **`make jellyfin-provision`** sets Jellyfin to Quick Sync (`jellyfin_encoding_config`: QSV, hardware encoding, low-power encoders, hardware decoding for H.264 / HEVC / MPEG-2 / VC-1 / VP9 / AV1, 10-bit HEVC and VP9). Run it only after the test passes. HEVC encoding stays off (many clients cannot play it); tone mapping is your call after the probe.
+5. **Look at it working:** play something your client cannot direct-play (Dashboard > Activity shows the transcode; the playback info says `(hw)`), and on wyvern run `sudo intel_gpu_top` to see the Video engine busy while the CPU stays low.
+
+`make site` does all of this in order on a rebuild: VMs, GPU in the guest, device plugin, Jellyfin, the proof, then provisioning (it stops at the proof if the GPU does not work, before QSV is switched on).
+
+*Undo:* set `jellyfin_gpu_enabled: false` (or remove `vm_gpu_passthrough` from wyvern) and `make jellyfin`; set `HardwareAccelerationType: none` in `jellyfin_encoding_config` and run `make jellyfin-provision`. `kubectl delete namespace intel-gpu-plugin` removes the plugin.
 
 ## Risks, in plain words
 1. **The host loses the iGPU.** A monitor plugged into castellan goes blank once VFIO owns the GPU. Everything is still reachable by SSH and the web UI, but if the network ever breaks you would have no local screen. Keep a second way in (for example a USB-Ethernet adapter or a cheap GPU) in mind before relying on this.

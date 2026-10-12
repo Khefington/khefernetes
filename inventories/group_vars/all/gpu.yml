@@ -2,3 +2,6 @@
 # The Intel iGPU on castellan that is handed to a VM (values from `make gpu-discover`). In group "all": castellan uses the address, the VM uses the id.
 gpu_passthrough_pci_address: "0000:00:02.0"
 gpu_passthrough_pci_id: "8086:4680"   # AlderLake-S GT1 (vendor:device)
+# Numeric id of the 'render' group inside the GPU VM (/dev/dri/renderD128 belongs to it). The Jellyfin pod joins this
+# group to be allowed to use the GPU. `make gpu-guest` checks that the VM still agrees with this number.
+gpu_render_gid: 992

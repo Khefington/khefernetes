@@ -26,8 +26,12 @@
   ansible.builtin.import_playbook: cluster/etcd_backup.yml
 - name: Bring the storage into Kubernetes
   ansible.builtin.import_playbook: storage/kubernetes.yml
+- name: Intel GPU device plugin (Quick Sync, stage 4)
+  ansible.builtin.import_playbook: cluster/gpu_plugin.yml
 - name: Deploy Jellyfin
   ansible.builtin.import_playbook: apps/jellyfin.yml
+- name: Prove Quick Sync inside the Jellyfin pod (stops here if it does not work, before QSV is switched on)
+  ansible.builtin.import_playbook: apps/jellyfin_gpu_test.yml
 - name: Configure Jellyfin (wizard, plugins, libraries, users, backup key)
   ansible.builtin.import_playbook: apps/jellyfin_provision.yml
 - name: Install the Jellyfin backup job

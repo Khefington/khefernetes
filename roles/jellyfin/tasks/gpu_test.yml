@@ -1,0 +1,94 @@
+---
+# Proof that Quick Sync works INSIDE the running Jellyfin pod (the same ffmpeg Jellyfin uses). Changes nothing in Jellyfin;
+# it writes and deletes one scratch file in the pod's /tmp. Run:  make jellyfin-gpu-test
+- name: Say when there is nothing to test
+  ansible.builtin.debug:
+    msg: "No VM has vm_gpu_passthrough: true, so the Jellyfin pod does not use a GPU. Nothing to test."
+  when: not (jellyfin_gpu_enabled | bool)
+
+- name: Stop here when there is nothing to test
+  ansible.builtin.meta: end_host
+  when: not (jellyfin_gpu_enabled | bool)
+
+- name: Look at the GPU devices and the user, inside the pod
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin --
+    sh -c "id; ls -l /dev/dri"
+  register: jellyfin_gpu_devices
+  changed_when: false
+  check_mode: false
+
+- name: Run the ffmpeg checks (a failing check does not stop the others)
+  vars:
+    jellyfin_gpu_init: >-
+      -hide_banner -loglevel error
+      -init_hw_device vaapi=va:/dev/dri/renderD128 -init_hw_device qsv=hw@va
+    jellyfin_gpu_src: "-f lavfi -i testsrc2=size=1280x720:rate=30 -t 3"
+    jellyfin_gpu_up: "-filter_hw_device hw -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv"
+    jellyfin_gpu_checks:
+      - name: H.264 encode on the GPU (h264_qsv)
+        fatal: true
+        args: "{{ jellyfin_gpu_init }} {{ jellyfin_gpu_src }} {{ jellyfin_gpu_up }} -c:v h264_qsv -y {{ jellyfin_gpu_test_file }}"
+      - name: H.264 low-power encode (needs the HuC firmware)
+        fatal: true
+        args: "{{ jellyfin_gpu_init }} {{ jellyfin_gpu_src }} {{ jellyfin_gpu_up }} -c:v h264_qsv -low_power 1 -y {{ jellyfin_gpu_test_file }}.lp.mp4"
+      - name: HEVC encode on the GPU (hevc_qsv)
+        fatal: true
+        args: "{{ jellyfin_gpu_init }} {{ jellyfin_gpu_src }} {{ jellyfin_gpu_up }} -c:v hevc_qsv -y {{ jellyfin_gpu_test_file }}.hevc.mp4"
+      - name: H.264 decode on the GPU
+        fatal: true
+        args: "{{ jellyfin_gpu_init }} -hwaccel qsv -hwaccel_device hw -hwaccel_output_format qsv -c:v h264_qsv -i {{ jellyfin_gpu_test_file }} -f null -"
+      - name: HEVC decode on the GPU
+        fatal: true
+        args: "{{ jellyfin_gpu_init }} -hwaccel qsv -hwaccel_device hw -hwaccel_output_format qsv -c:v hevc_qsv -i {{ jellyfin_gpu_test_file }}.hevc.mp4 -f null -"
+      - name: HDR tone mapping (OpenCL), optional
+        fatal: false
+        args: >-
+          -hide_banner -loglevel error -init_hw_device vaapi=va:/dev/dri/renderD128 -init_hw_device opencl=ocl@va -filter_hw_device ocl
+          {{ jellyfin_gpu_src }} -vf format=p010le,hwupload,tonemap_opencl=tonemap=bt2390:format=nv12,hwdownload,format=nv12 -f null -
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin -- {{ jellyfin_gpu_ffmpeg }} {{ item.args }}"
+  loop: "{{ jellyfin_gpu_checks }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: jellyfin_gpu_results
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Remove the scratch files from the pod
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin --
+    sh -c "rm -f {{ jellyfin_gpu_test_file }} {{ jellyfin_gpu_test_file }}.lp.mp4 {{ jellyfin_gpu_test_file }}.hevc.mp4"
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Results
+  ansible.builtin.debug:
+    msg: "{{ ('OK     ' if item.rc == 0 else 'FAILED') }}  {{ item.item.name }}{{ '' if item.rc == 0 else ':  ' ~ (item.stderr_lines | last | default('')) }}"
+  loop: "{{ jellyfin_gpu_results.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Stop with the details if a required check failed
+  ansible.builtin.fail:
+    msg: |-
+      Quick Sync does not work inside the Jellyfin pod yet. Devices and user in the pod:
+      {{ jellyfin_gpu_devices.stdout }}
+      Failing checks and the last lines ffmpeg printed:
+      {% for r in jellyfin_gpu_results.results if r.rc != 0 and r.item.fatal %}
+      - {{ r.item.name }}: {{ (r.stderr_lines | default([]))[-6:] | join(' | ') }}
+      {% endfor %}
+      Paste all of this back. Jellyfin itself keeps working in software; set HardwareAccelerationType back to none
+      (jellyfin_encoding_config) and run make jellyfin-provision if you turned Quick Sync on already.
+  when: jellyfin_gpu_results.results | selectattr('rc', 'ne', 0) | selectattr('item.fatal') | list | length > 0
+
+- name: All required checks passed
+  ansible.builtin.debug:
+    msg:
+      - "Quick Sync works inside the Jellyfin pod."
+      - "Now run  make jellyfin-provision  (it sets Jellyfin to QSV), then play something that needs transcoding and look for '(hw)' next to the video stream in Dashboard > Activity > the playing item, or run intel_gpu_top on wyvern."
+      - >-
+        {{ 'Optional HDR tone mapping works here: add EnableTonemapping: true to jellyfin_encoding_config if you want it.'
+           if (jellyfin_gpu_results.results | selectattr('item.fatal', 'equalto', false) | selectattr('rc', 'equalto', 0) | list | length) > 0
+           else 'Optional HDR tone mapping did not work here; leave it off.' }}

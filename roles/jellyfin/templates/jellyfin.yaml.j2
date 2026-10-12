@@ -36,6 +36,9 @@ spec:
         runAsUser: {{ media_uid }}      # the 'media' user, same owner as every file in the library
         runAsGroup: {{ media_gid }}
         fsGroup: {{ media_gid }}
+{% if jellyfin_gpu_enabled | bool %}
+        supplementalGroups: [{{ gpu_render_gid }}]   # the 'render' group of the VM: /dev/dri/renderD128 belongs to it
+{% endif %}
         seccompProfile:
           type: RuntimeDefault
       affinity:
@@ -87,6 +90,9 @@ spec:
               memory: {{ jellyfin_memory_request }}
             limits:
               memory: {{ jellyfin_memory_limit }}
+{% if jellyfin_gpu_enabled | bool %}
+              gpu.intel.com/i915: 1      # one share of the Intel GPU, handed out by the device plugin (roles/intel_gpu_plugin)
+{% endif %}
           startupProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 5

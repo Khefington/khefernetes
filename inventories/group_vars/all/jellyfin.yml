@@ -73,17 +73,21 @@ jellyfin_plugins:
 # --- Playback / transcoding (Dashboard > Playback > Transcoding) --------------------------------
 # Settings listed here are re-applied on every provisioning run, so restoring an older backup (which overwrites
 # encoding.xml) cannot silently turn them off. Empty = leave whatever the server has.
-# Hardware acceleration only works if the Jellyfin pod can see the GPU (/dev/dri inside the pod). That needs the
-# Intel iGPU passed through to wyvern and mounted into the pod, which this repo does not do yet; turning it on
-# before then makes playback fall back to errors or software. Example for later (names as in Jellyfin's API):
-#   jellyfin_encoding_config:
-#     HardwareAccelerationType: qsv
-#     EnableHardwareEncoding: true
-#     EnableTonemapping: true
-#     HardwareDecodingCodecs: [h264, hevc, mpeg2video, vc1, vp9, av1]
-#     EnableDecodingColorDepth10Hevc: true
-#     EnableDecodingColorDepth10Vp9: true
-jellyfin_encoding_config: {}
+# Hardware acceleration needs the Intel iGPU inside wyvern (docs/runbooks/gpu-passthrough.md) and the pod asking for it
+# (automatic when a VM has vm_gpu_passthrough: true). The names below are Jellyfin's API names; `make jellyfin-gpu-test`
+# proves the GPU works inside the pod before you rely on this.
+#   Low-power encoders use the GPU's fixed-function engine (needs the HuC firmware, which wyvern loads) and leave the
+#   shader units free. HEVC *encoding* stays off (AllowHevcEncoding): many clients cannot play it and H.264 is enough.
+#   Tone mapping (HDR -> SDR) is separate: the test prints whether it works here; if it says OK, add
+#   EnableTonemapping: true below.
+jellyfin_encoding_config:
+  HardwareAccelerationType: qsv
+  EnableHardwareEncoding: true
+  EnableIntelLowPowerH264HwEncoder: true
+  EnableIntelLowPowerHevcHwEncoder: true
+  HardwareDecodingCodecs: [h264, hevc, mpeg2video, vc1, vp9, av1]
+  EnableDecodingColorDepth10Hevc: true
+  EnableDecodingColorDepth10Vp9: true
 
 # --- Scheduled tasks -----------------------------------------------------------------------
 # Triggers to make sure each task has, keyed by the task's name as the Dashboard shows it. Only ADDS: Jellyfin's own
