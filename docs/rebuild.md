@@ -40,7 +40,7 @@ After step 5: `kubectl get svc -A | grep LoadBalancer` should show `rke2-traefik
 
 ## 4. Restore Jellyfin
 1. Open `http://192.168.1.200` (or `http://jellyfin.home.lan`) and complete the first-run wizard with any user.
-2. Dashboard > Backups: upload/select the backup zip and restore. Jellyfin restarts. Your users, libraries and watch history return.
+2. Dashboard > Backups: the nightly zips from the HDD are already listed here (the backup folder on castellan is mounted into the Jellyfin pod). Pick the newest one and click Restore. Jellyfin restarts and is unavailable for a minute or two. Your users, libraries and watch history return. Nothing needs to be copied anywhere.
 3. Create a new API key (Dashboard > Advanced > API Keys, name it `backup`). The old key does not exist any more. Put the new one in the vault as `vault_jellyfin_api_key`, then `make jellyfin-backup`.
 4. `make etcd-backup-now` again. The new cluster has the new token, so take a fresh snapshot with it.
 5. Dashboard > Scan All Libraries. Jellyfin adopts the trickplay folders already on the SSD instead of regenerating them.

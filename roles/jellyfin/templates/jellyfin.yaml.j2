@@ -45,6 +45,29 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist     # keep it on the workers
+      initContainers:
+        # Why this exists: /config/data/trickplay is a mount INSIDE the /config volume. When the
+        # container starts, the runtime creates the missing parent folder /config/data itself, as
+        # root. Jellyfin (running as the media user) then cannot write its marker file there and
+        # crashes with "Access to the path '/config/data/.jellyfin-data' is denied".
+        # This step runs first, makes the folder and hands it to the media user. It only touches the
+        # config volume (not the NFS mounts), is safe to repeat, and also repairs an existing volume.
+        - name: fix-config-ownership
+          image: docker.io/jellyfin/jellyfin:{{ jellyfin_version }}
+          command: ["sh", "-c", "mkdir -p /config/data && chown {{ media_uid }}:{{ media_gid }} /config /config/data"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE]   # only what mkdir/chown need
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config}
       containers:
         - name: jellyfin
           image: docker.io/jellyfin/jellyfin:{{ jellyfin_version }}
@@ -91,6 +114,13 @@ spec:
             - name: appdata
               mountPath: /config/data/trickplay
               subPath: {{ jellyfin_trickplay_subpath }}
+            # Jellyfin's own Dashboard > Backups page reads and writes /config/data/backups. Pointing it at the
+            # backup folder on the HDD means: backups made in the UI land safely off the node, the nightly job's
+            # files show up in the UI with a Restore button, and a rebuilt cluster finds them straight away.
+            # Only this one folder is exposed (not the library, not the etcd snapshots next to it).
+            - name: data
+              mountPath: /config/data/backups
+              subPath: backups/jellyfin
       volumes:
         - name: config
           persistentVolumeClaim:
