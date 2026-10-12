@@ -22,6 +22,7 @@ make site                                   # the whole build, in order
 | Fix media copied one folder too deep | `make flatten-media` then `make flatten-media APPLY=1` |
 | Jellyfin trickplay / file-access problems | `make diagnose-jellyfin` |
 | Back up Jellyfin now | `make backup-now` |
+| Make `jellyfin.home.lan` work on every device | `make dns`, then set the router DNS to castellan (`docs/runbooks/dns.md`) |
 | Add a library (e.g. audiobooks) | add it to `media_libraries`, then `make nfs` |
 | Bump a version | edit `inventories/group_vars/all/versions.yml`, run the matching target |
 | Lint everything | `make lint` |
@@ -42,6 +43,7 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 - [Architecture and design rules](docs/architecture.md)
 - [Storage, hardlinks, books, large libraries](docs/storage.md)
 - [Networking: MetalLB and the ingress](docs/networking.md)
+- [Names on the LAN: DNS server on castellan](docs/runbooks/dns.md)
 - [Secrets](docs/secrets.md)
 - [Rebuild / restore drill](docs/rebuild.md)
 - Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)

@@ -1,0 +1,8 @@
+---
+# A small DNS server on castellan so every device on the LAN can open jellyfin.home.lan.
+#   ansible-playbook playbooks/proxmox/dns.yml
+# Afterwards, point the router's DNS setting at castellan (docs/runbooks/dns.md). Ansible cannot do that step.
+- name: DNS server on the Proxmox host
+  hosts: proxmox
+  roles:
+    - dns_server

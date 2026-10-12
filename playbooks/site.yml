@@ -16,6 +16,8 @@
   ansible.builtin.import_playbook: cluster/rke2.yml
 - name: Cluster networking (MetalLB and the ingress address)
   ansible.builtin.import_playbook: cluster/networking.yml
+- name: DNS server on castellan (jellyfin.home.lan and friends)
+  ansible.builtin.import_playbook: proxmox/dns.yml
 - name: Copy etcd snapshots to castellan
   ansible.builtin.import_playbook: cluster/etcd_backup.yml
 - name: Bring the storage into Kubernetes

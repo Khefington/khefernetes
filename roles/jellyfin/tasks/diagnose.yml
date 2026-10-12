@@ -106,6 +106,7 @@
     - name: Use the key (skipped until `make jellyfin-provision` has created it)
       when: jellyfin_api_key | length > 0
       block:
+
         - name: Ask for the library list
           ansible.builtin.uri:
             url: "{{ jellyfin_api_url }}/Library/VirtualFolders"

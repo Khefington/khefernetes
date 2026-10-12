@@ -18,10 +18,12 @@ Disks on castellan: 1TB SSD (Proxmox, templates, VM disks), 4TB HDD (media libra
 3. `storage/nfs.yml`        NFS server on castellan, clients on VMs, mount/ownership/hardlink tests
 4. `cluster/rke2.yml`       RKE2 servers then agents
 5. `cluster/networking.yml` MetalLB and the ingress LoadBalancer address (see `docs/networking.md`)
-6. `cluster/etcd_backup.yml` copy etcd snapshots to castellan (see `docs/runbooks/etcd-restore.md`)
-7. `storage/kubernetes.yml` `media` namespace, NFS PVs/PVCs, local-path provisioner
-8. `apps/jellyfin.yml`      Jellyfin
-9. `apps/jellyfin_backup.yml` nightly backup CronJob
+6. `proxmox/dns.yml`        DNS server on castellan: `*.home.lan` points at the ingress (see `docs/runbooks/dns.md`)
+7. `cluster/etcd_backup.yml` copy etcd snapshots to castellan (see `docs/runbooks/etcd-restore.md`)
+8. `storage/kubernetes.yml` `media` namespace, NFS PVs/PVCs, local-path provisioner
+9. `apps/jellyfin.yml`      Jellyfin
+10. `apps/jellyfin_provision.yml` wizard, plugins, libraries, users, backup key
+11. `apps/jellyfin_backup.yml` nightly backup CronJob
 
 One-off, run by hand: `proxmox/bootstrap.yml`, `proxmox/harden.yml`, `proxmox/staging_disk.yml -e staging_disk_prepare=true`, `cluster/destroy_vms.yml` (see `docs/rebuild.md`).
 Day-2 tasks live in `playbooks/operations/`.
@@ -70,7 +72,7 @@ playbooks/
   proxmox/ cluster/ storage/ apps/    one playbook per stage
   operations/                   import, audit, flatten, diagnose
   common/storage_paths.yml      shared "where are the disks" play
-roles/                          proxmox_*, storage_paths, nfs_server, nfs_client, rke2, k8s_storage, jellyfin, jellyfin_backup, media_import
+roles/                          proxmox_*, dns_server, storage_paths, nfs_server, nfs_client, rke2, k8s_storage, jellyfin, jellyfin_backup, media_import
 docs/                           this folder
 scripts/                        helper scripts (vault check, migration)
 ```

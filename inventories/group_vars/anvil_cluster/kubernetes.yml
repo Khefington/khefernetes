@@ -12,8 +12,7 @@ media_namespace: media
 # See docs/networking.md before switching an existing cluster.
 ingress_controller: traefik
 ingress_class_name: "{{ 'traefik' if ingress_controller == 'traefik' else 'nginx' }}"
-# The one LAN address the ingress answers on. Must be inside metallb_range (group_vars/all/main.yml).
-# Point your DNS name (for example jellyfin.<lan_domain>) at it on your router.
-ingress_vip: 192.168.1.200
+# ingress_vip (the one LAN address the ingress answers on) lives in group_vars/all/main.yml,
+# because castellan's DNS server needs it too.
 # The kubectl command line used by every role.
 kubectl_cmd: "{{ kubectl_bin }} --kubeconfig {{ kubeconfig_path }}"

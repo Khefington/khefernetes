@@ -36,6 +36,8 @@ The playbook removes the old SSH host keys from your PC too, so the new VMs will
 | 7 | `make jellyfin` | pod ready, then the health check through the ingress answers |
 | 8 | `make jellyfin-provision` | the first-run wizard done, plugins installed, the four libraries and the `Khef` user present, the backup key stored |
 
+Castellan's DNS server (`make dns`) is not part of the rebuild: it runs on castellan and survives it. The router keeps pointing at it.
+
 After step 3, on kasrkin, check the ingress is Traefik: `kubectl -n kube-system get pods | grep -i -E 'traefik|ingress-nginx'` should list a traefik pod on each node and no ingress-nginx.
 After step 5: `kubectl get svc -A | grep LoadBalancer` should show `rke2-traefik` with EXTERNAL-IP `192.168.1.200`.
 

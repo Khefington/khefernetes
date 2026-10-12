@@ -10,6 +10,9 @@ lan_dns_servers:
 lan_domain: home.lan
 # Reserved for MetalLB. Must be OUTSIDE the router's DHCP pool.
 metallb_range: 192.168.1.200-192.168.1.220
+# The one LAN address the ingress answers on. Must be inside metallb_range.
+# castellan's DNS server (make dns) points every name under lan_domain at it.
+ingress_vip: 192.168.1.200
 
 # --- Locale ---
 timezone: America/Chicago

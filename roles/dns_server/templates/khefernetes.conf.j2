@@ -1,0 +1,22 @@
+# Managed by Ansible (khefernetes). Manual edits will be overwritten.
+# Answer only on castellan's LAN address, and do not read the host's own resolver settings or /etc/hosts.
+listen-address={{ dns_server_listen_address }}
+bind-interfaces
+no-resolv
+no-hosts
+domain-needed
+bogus-priv
+cache-size=1000
+
+# Everything outside {{ dns_server_domain }} goes to the real DNS servers.
+{% for s in dns_server_upstreams %}
+server={{ s }}
+{% endfor %}
+
+# One name per machine (these win over the wildcard below).
+{% for r in dns_server_host_records + dns_server_extra_records %}
+host-record={{ r.name }},{{ r.ip }}
+{% endfor %}
+
+# Everything else under {{ dns_server_domain }} is the ingress.
+address=/{{ dns_server_domain }}/{{ dns_server_wildcard_address }}

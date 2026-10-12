@@ -17,10 +17,10 @@ jellyfin_users:
 # path is where the folder appears INSIDE the Jellyfin pod (the library is mounted at /media).
 # type: movies, tvshows, music, books, ... (Jellyfin's collection types)
 jellyfin_libraries:
-  - { name: Movies, type: movies, path: /media/movies }
-  - { name: Shows, type: tvshows, path: /media/tv }
-  - { name: Music, type: music, path: /media/music }
-  - { name: Books, type: books, path: /media/books }
+  - {name: Movies, type: movies, path: /media/movies}
+  - {name: Shows, type: tvshows, path: /media/tv}
+  - {name: Music, type: music, path: /media/music}
+  - {name: Books, type: books, path: /media/books}
 
 # Options applied to every library (a library entry can add `options:` to override).
 # The media library is mounted read-only, so nothing may be saved next to the media.
@@ -57,14 +57,14 @@ jellyfin_server_config:
 # --- Plugins -------------------------------------------------------------------------------
 # Jellyfin's own repository is always there. Add third-party ones here.
 jellyfin_plugin_repositories:
-  - { Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true }
+  - {Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true}
 
 # name must match the catalogue name exactly. Without a version the newest compatible one is installed;
 # the end of the run prints what was installed: copy those versions here to pin them.
 # Third-party plugins run inside Jellyfin with full access, so add only what you have looked at.
 jellyfin_plugins:
-  - { name: Open Subtitles, version: "24.0.0.0" }
-  - { name: Intro Skipper, version: "1.10.11.24" }
+  - {name: Open Subtitles, version: "24.0.0.0"}
+  - {name: Intro Skipper, version: "1.10.11.24"}
 
 # Plugin settings, keyed by plugin name; merged into the plugin's saved settings.
 # Find the setting names with: make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"

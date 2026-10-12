@@ -41,3 +41,4 @@ High Level Steps / phases
 - VM sizes set per host (wyvern 12 vCPU / 16 GB for Jellyfin); Jellyfin limit raised to 10 GiB.
 - Added `jellyfin_provision`: wizard, plugins (Open Subtitles, Intro Skipper), settings, libraries, users and the backup API key from Git.
 - Open Subtitles credentials now come from the vault through `jellyfin_plugin_settings`. The settings viewer hides secret-looking names more precisely (it no longer masks Intro Skipper's `SnapToKeyframe`).
+- Added `dns_server` (`make dns`): dnsmasq on castellan answers `*.home.lan` with the ingress address, machine names from the inventory, and forwards everything else. The router's DNS setting then points at castellan. `ingress_vip` moved to `group_vars/all/main.yml` because castellan needs it.

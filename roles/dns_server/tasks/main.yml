@@ -1,0 +1,66 @@
+---
+- name: Stop if the addresses look wrong
+  ansible.builtin.assert:
+    that:
+      - dns_server_listen_address is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+      - dns_server_wildcard_address is match('^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
+      - dns_server_upstreams | length > 0
+    fail_msg: >-
+      dns_server_listen_address ({{ dns_server_listen_address }}), dns_server_wildcard_address
+      ({{ dns_server_wildcard_address }}) and dns_server_upstreams ({{ dns_server_upstreams }}) must all be set.
+
+- name: Install dnsmasq and dig
+  ansible.builtin.apt:
+    name:
+      - dnsmasq
+      - bind9-dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Write the configuration (dnsmasq checks it before it is put in place)
+  ansible.builtin.template:
+    src: khefernetes.conf.j2
+    dest: "{{ dns_server_conf_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: dnsmasq --test --conf-file=%s
+  notify: Restart dnsmasq
+
+- name: Apply the change now, before testing it
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start dnsmasq
+  block:
+    - name: Start dnsmasq at boot and now
+      ansible.builtin.systemd:
+        name: dnsmasq
+        enabled: true
+        state: started
+  rescue:
+    - name: Show why it would not start
+      ansible.builtin.command: journalctl -u dnsmasq -n 15 --no-pager
+      register: dns_server_journal
+      changed_when: false
+    - name: Stop
+      ansible.builtin.fail:
+        msg: |-
+          dnsmasq did not start. Something else may already be using port 53 on {{ dns_server_listen_address }}.
+          {{ dns_server_journal.stdout }}
+
+- name: Ask the new server three questions
+  ansible.builtin.command: >-
+    dig +short +time=3 +tries=2 @{{ dns_server_listen_address }} {{ item.name }} A
+  loop:
+    - { label: the ingress, name: "jellyfin.{{ dns_server_domain }}", expect: "{{ dns_server_wildcard_address }}" }
+    - { label: a machine name, name: "{{ inventory_hostname }}.{{ dns_server_domain }}", expect: "{{ ansible_host }}" }
+    - { label: an outside name, name: "{{ dns_server_probe_external }}", expect: "" }
+  loop_control:
+    label: "{{ item.label }}: {{ item.name }}"
+  register: dns_server_answers
+  changed_when: false
+  check_mode: false
+  failed_when: >-
+    (item.expect | length > 0 and item.expect not in dns_server_answers.stdout.split())
+    or (item.expect | length == 0 and dns_server_answers.stdout.split() | length == 0)

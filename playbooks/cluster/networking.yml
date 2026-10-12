@@ -28,4 +28,4 @@
       ansible.builtin.debug:
         msg:
           - "The ingress answers on http://{{ ingress_vip }} (HTTP {{ networking_probe.status }})."
-          - "Next: make your router/DNS resolve {{ jellyfin_hostname | default('jellyfin.' ~ lan_domain) }} to {{ ingress_vip }}."
+          - "Next: make dns, then point the router's DNS setting at castellan (docs/runbooks/dns.md), so {{ jellyfin_hostname | default('jellyfin.' ~ lan_domain) }} resolves to {{ ingress_vip }} on every device."

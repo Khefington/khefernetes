@@ -1,0 +1,20 @@
+---
+# Address dnsmasq listens on: castellan's own LAN address, and nothing else.
+dns_server_listen_address: "{{ ansible_host }}"
+# Every name under this domain (jellyfin.home.lan, anything.home.lan) answers with the ingress address.
+dns_server_domain: "{{ lan_domain }}"
+dns_server_wildcard_address: "{{ ingress_vip }}"
+# Everything outside the domain is forwarded here (the router first, then Google), same list the VMs use.
+dns_server_upstreams: "{{ lan_dns_servers }}"
+# One name per machine in the inventory (castellan.home.lan, kasrkin.home.lan, ...). They win over the wildcard.
+dns_server_host_records: >-
+  {%- set out = [] -%}
+  {%- for h in groups['all'] -%}
+  {%- set _ = out.append({'name': h ~ '.' ~ dns_server_domain, 'ip': hostvars[h].ansible_host}) -%}
+  {%- endfor -%}
+  {{ out }}
+# Extra fixed names, for example: [{ name: printer.home.lan, ip: 192.168.1.60 }]
+dns_server_extra_records: []
+# Self-test after install: a real outside name, to prove forwarding works (a broken forwarder breaks the whole house).
+dns_server_probe_external: example.com
+dns_server_conf_file: /etc/dnsmasq.d/khefernetes.conf

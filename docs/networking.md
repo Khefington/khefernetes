@@ -16,7 +16,8 @@ The node addresses keep working as well.
 |---|---|
 | `metallb_range` (reserved addresses, must be outside the router's DHCP pool) | `inventories/group_vars/all/main.yml` |
 | `metallb_version`, `metallb_sha256` | `inventories/group_vars/all/versions.yml` |
-| `ingress_controller`, `ingress_vip`, `ingress_class_name` | `inventories/group_vars/anvil_cluster/kubernetes.yml` |
+| `ingress_vip` | `inventories/group_vars/all/main.yml` (castellan's DNS server needs it too) |
+| `ingress_controller`, `ingress_class_name` | `inventories/group_vars/anvil_cluster/kubernetes.yml` |
 
 ## Run it
 ```
@@ -25,7 +26,7 @@ make networking
 It installs MetalLB, creates the address pool, gives the ingress controller a `LoadBalancer` Service on `ingress_vip`, and then asks the ingress for a page
 from a worker node using only that address. Re-running is safe.
 
-Then make your router (or Pi-hole) resolve `jellyfin.<lan_domain>` (default `jellyfin.home.lan`) to `ingress_vip`. Ansible cannot do that step.
+Then make `jellyfin.<lan_domain>` (default `jellyfin.home.lan`) resolve to `ingress_vip`: run `make dns` and point the router at castellan. See `docs/runbooks/dns.md`.
 
 ## Keeping the addresses from being handed to something else
 Your router's DHCP server hands addresses to devices that ask for one. These machines do not ask, so the router cannot move them:

@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: dns_server
+  author: khefernetes
+  description: "Small LAN DNS server (dnsmasq) on the Proxmox host: *.lan_domain points at the ingress, other names go upstream"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []
