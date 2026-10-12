@@ -1,6 +1,6 @@
 # Quick Sync for Jellyfin: passing the Intel iGPU to wyvern
 
-**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is written (`make gpu-host`) but has not been run yet; nothing on castellan has been changed. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
+**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is done: `make gpu-host` was applied, castellan was rebooted, and the iGPU is bound to `vfio-pci` (status READY). Stage 2 (`vm_gpu_passthrough` for wyvern) is written and waiting to be applied. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
 
 ## Why this is needed
 Jellyfin runs in a container on wyvern, which is a VM. A VM cannot see castellan's integrated GPU unless castellan hands it over (PCIe passthrough with VFIO). After that the VM has its own `/dev/dri`, and the Jellyfin pod can be given that device.
@@ -10,8 +10,8 @@ The i9-12900K's UHD 770 does hardware H.264, HEVC (also 10-bit) and VP9 decoding
 | Stage | What | Touches | Status |
 |---|---|---|---|
 | 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | done |
-| 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | ready to run |
-| 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`); VM rebuilt through `make vms` | wyvern only | after stage 1 works |
+| 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | done |
+| 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`), on the q35 machine type with UEFI (OVMF); applied by `make vms` | wyvern only (restarted) | ready to run |
 | 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo` | wyvern only | after stage 2 |
 | 4 | Jellyfin pod: mount `/dev/dri`, add the `render` group, set `jellyfin_encoding_config` (QSV), prove with an ffmpeg test | the Jellyfin deployment | last |
 
@@ -30,6 +30,25 @@ The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.
 5. If the host does not come up properly, the previous GRUB entries are still in the boot menu (choose an older kernel or edit the line at the GRUB prompt by pressing `e` and deleting `intel_iommu=on iommu=pt`), then follow "If it goes wrong".
 6. Another file under `/etc/default/grub.d/` can override the kernel line; the play warns if it finds one. The status report shows the options the running kernel actually has.
 
+## Stage 2 in detail: `make vms`
+`inventories/host_vars/wyvern.yml` now says `vm_gpu_passthrough: true`. `make vms` then does, for wyvern only:
+1. The normal steps (clone if missing, cores, memory, cloud-init). A VM with the GPU is **not** started here.
+2. A new step on castellan (role `proxmox_vm_gpu`) checks that the iGPU is on `vfio-pci` (stage 1 READY), reads wyvern's configuration, and works out what is missing: machine type `q35`, UEFI firmware (`ovmf`) with an EFI disk, `balloon 0` (no memory ballooning), and `hostpci0: 0000:00:02.0,pcie=1`. It uses `qm` over SSH because Proxmox only lets root, not the API token, attach a raw PCI device.
+3. If wyvern is **running** and anything is missing, it stops with a message instead of restarting it. When a restart is fine:
+   ```
+   make backup-now            # Jellyfin backup first
+   make vms ARGS="-e proxmox_vm_gpu_allow_restart=true"
+   ```
+   It then shuts wyvern down cleanly (forced after 3 minutes), applies the settings, starts it and waits for SSH and cloud-init like any rebuild. Jellyfin is down meanwhile (a few minutes); its data stays, the disk is not touched.
+4. Running it again changes nothing. A freshly cloned wyvern (after `make destroy-vms`) gets the same settings automatically and is started by this step.
+
+What to check afterwards (on wyvern, over SSH, or `ansible wyvern -a ...`): `lspci -nn | grep -i vga` shows the Intel device. At this point there is probably still no `/dev/dri`, because the guest needs the `i915` driver: that is stage 3. Also `make ping` and `kubectl get nodes` should show wyvern Ready, and Jellyfin should come back by itself.
+
+**Things that can go wrong in stage 2**, all fixable over SSH on castellan:
+- *wyvern does not start* (check `qm start 202`, `journalctl -b | grep -i vfio`): usually the iGPU not on `vfio-pci` after a host reboot, a `BAR 0: can't reserve` error (risk 11 below), or not enough free host memory (wyvern's 16 GB is now pinned; the other VMs and castellan need about 10 GB more).
+- *wyvern boots but is unreachable*: the switch from the old BIOS/i440fx setup to UEFI/q35 changes how the guest sees its disk and network card. The Ubuntu cloud image supports UEFI and cloud-init names the interface `eth0` by its MAC address, so this should be fine, but it is the one step that changes how the existing VM boots. Revert: `qm stop 202; qm set 202 --delete hostpci0,efidisk0 --bios seabios --machine pc; qm start 202`. Its disk was not changed.
+- *Proxmox says the device is in use*: the iGPU is not on `vfio-pci` yet (run `make gpu-host`).
+
 ## Risks, in plain words
 1. **The host loses the iGPU.** A monitor plugged into castellan goes blank once VFIO owns the GPU. Everything is still reachable by SSH and the web UI, but if the network ever breaks you would have no local screen. Keep a second way in (for example a USB-Ethernet adapter or a cheap GPU) in mind before relying on this.
 2. **Boot configuration mistakes can leave castellan unbootable.** Stage 1 edits kernel options and the initramfs. I will change one thing at a time, keep a copy of every file before editing it, and keep the old kernel entry. A USB stick with a Proxmox installer or any Linux live image is the recovery tool if it still goes wrong.
@@ -40,7 +59,9 @@ The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.
 7. **Shared IOMMU groups.** If the iGPU shares a group with another device (a USB or SATA controller, say), passing it through would take those too. On Alder Lake the iGPU is normally alone in its group; stage 0 prints the group so we know before changing anything.
 8. **The VM's kernel must contain the `i915` driver.** Cloud images sometimes ship a trimmed "virtual" kernel without it; stage 3 checks this and installs the full one if needed.
 9. **A slightly larger attack surface.** The Jellyfin pod gets the GPU's render device (a non-privileged device node, in the `render` group). That is the usual way to do it, but it matters for the later hardening pass before the server is exposed to the internet.
-10. **BIOS quirks.** Some boards behave oddly when the iGPU is the primary display, or need "Above 4G decoding" or similar. Stage 0 cannot see those; if the VM will not start after stage 2, this is the first thing to look at.
+10. **A connected monitor stays blank.** Once `vfio-pci` owns the iGPU, nothing on castellan can draw to a monitor plugged into it. The GRUB menu still shows (the firmware draws it before the kernel starts), so editing the kernel line at the GRUB prompt still works; after that the screen is dark. A monitor that is plugged in but off or asleep usually reads as "disconnected" and does not stop `make gpu-host`; one that reads "connected" does (override: `gpu_passthrough_allow_display`). Use SSH or the Proxmox web UI to check the host.
+11. **The iGPU is castellan's boot display**, the hardest kind to hand to a VM. If wyvern fails to start with a message like `BAR 0: can't reserve` or `Cannot reserve ... efifb`, add `video=efifb:off` to `gpu_passthrough_kernel_options` (role defaults), run `make gpu-host ARGS="-e gpu_passthrough_prepare=true"` and reboot castellan. It is not added by default because it is often unnecessary.
+12. **BIOS quirks.** Some boards behave oddly when the iGPU is the primary display, or need "Above 4G decoding" or similar. Stage 0 cannot see those; if the VM will not start after stage 2, this is the first thing to look at.
 
 ## If it goes wrong (works over SSH, no screen needed)
 1. Remove the passthrough from the VM: `qm set 202 --delete hostpci0` (or re-run `make vms` after taking `hostpci0` out of the inventory).

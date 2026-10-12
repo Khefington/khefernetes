@@ -1,0 +1,77 @@
+---
+- name: "Read the configuration and state of {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.command: "qm {{ item }} {{ hostvars[proxmox_vm_gpu_host].vm_id }}"
+  loop: [config, status]
+  register: proxmox_vm_gpu_read
+  changed_when: false
+  check_mode: false
+
+- name: "Work out what is missing on {{ proxmox_vm_gpu_host }}"
+  vars:
+    cfg_lines: "{{ proxmox_vm_gpu_read.results[0].stdout_lines }}"
+    cfg: "{{ dict(cfg_lines | select('contains', ': ') | map('split', ': ', 1) | list) }}"
+    addr_short: "{{ proxmox_vm_gpu_pci_address | regex_replace('^[0-9a-f]{4}:', '') }}"
+  ansible.builtin.set_fact:
+    proxmox_vm_gpu_running: "{{ 'running' in proxmox_vm_gpu_read.results[1].stdout }}"
+    proxmox_vm_gpu_has_pending: "{{ cfg_lines | select('match', '^\\[PENDING\\]') | list | length > 0 }}"
+    proxmox_vm_gpu_need_machine: "{{ cfg.machine | default('') != proxmox_vm_gpu_machine }}"
+    proxmox_vm_gpu_need_bios: "{{ cfg.bios | default('seabios') != 'ovmf' }}"
+    proxmox_vm_gpu_need_efidisk: "{{ 'efidisk0' not in cfg }}"
+    proxmox_vm_gpu_need_balloon: "{{ cfg.balloon | default('') != '0' }}"
+    proxmox_vm_gpu_need_hostpci: >-
+      {{ cfg.hostpci0 | default('') is not search('(^|[=,;])(' ~ (proxmox_vm_gpu_pci_address | regex_escape) ~ '|' ~ (addr_short | regex_escape) ~ ')([,;]|$)') }}
+
+- name: "Summarise the changes for {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.set_fact:
+    proxmox_vm_gpu_changes: >-
+      {{ (['machine ' ~ proxmox_vm_gpu_machine] if proxmox_vm_gpu_need_machine | bool else [])
+         + (['UEFI firmware (ovmf)'] if proxmox_vm_gpu_need_bios | bool else [])
+         + (['EFI disk'] if proxmox_vm_gpu_need_efidisk | bool else [])
+         + (['no memory ballooning'] if proxmox_vm_gpu_need_balloon | bool else [])
+         + (['PCI device ' ~ proxmox_vm_gpu_pci_address] if proxmox_vm_gpu_need_hostpci | bool else []) }}
+
+- name: "Ask before restarting the running VM {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.assert:
+    that: proxmox_vm_gpu_allow_restart | bool
+    quiet: true
+    fail_msg: >-
+      {{ proxmox_vm_gpu_host }} (VM {{ hostvars[proxmox_vm_gpu_host].vm_id }}) is running and needs: {{ proxmox_vm_gpu_changes | join(', ') }}{{ ' (changes already waiting for a restart)' if proxmox_vm_gpu_has_pending | bool else '' }}.
+      Applying that stops the VM and starts it again: whatever runs on it (Jellyfin on wyvern) is down for a few minutes.
+      When that is fine: make vms ARGS="-e proxmox_vm_gpu_allow_restart=true". Nothing was stopped.
+  when:
+    - proxmox_vm_gpu_running | bool
+    - (proxmox_vm_gpu_changes | length > 0) or (proxmox_vm_gpu_has_pending | bool)
+
+- name: "Shut down (clean, forced after the timeout) {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.command: >-
+    qm shutdown {{ hostvars[proxmox_vm_gpu_host].vm_id }}
+    --timeout {{ proxmox_vm_gpu_shutdown_timeout_seconds }} --forceStop 1
+  changed_when: true
+  when:
+    - proxmox_vm_gpu_running | bool
+    - (proxmox_vm_gpu_changes | length > 0) or (proxmox_vm_gpu_has_pending | bool)
+
+- name: "Add the EFI disk (holds the UEFI settings) to {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.command: >-
+    qm set {{ hostvars[proxmox_vm_gpu_host].vm_id }}
+    --efidisk0 {{ hostvars[proxmox_vm_gpu_host].vm_storage }}:1,efitype=4m,pre-enrolled-keys=0
+  changed_when: true
+  when: proxmox_vm_gpu_need_efidisk | bool
+
+- name: "Set machine type, firmware, memory and the PCI device on {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.command: >-
+    qm set {{ hostvars[proxmox_vm_gpu_host].vm_id }}
+    --machine {{ proxmox_vm_gpu_machine }} --bios ovmf --balloon 0
+    --hostpci0 {{ proxmox_vm_gpu_pci_address }},{{ proxmox_vm_gpu_hostpci_options }}
+  changed_when: true
+  when: >-
+    (proxmox_vm_gpu_need_machine | bool) or (proxmox_vm_gpu_need_bios | bool)
+    or (proxmox_vm_gpu_need_balloon | bool) or (proxmox_vm_gpu_need_hostpci | bool)
+
+- name: "Start {{ proxmox_vm_gpu_host }}"
+  ansible.builtin.command: "qm start {{ hostvars[proxmox_vm_gpu_host].vm_id }}"
+  register: proxmox_vm_gpu_start
+  changed_when: true
+  when: >-
+    (not (proxmox_vm_gpu_running | bool))
+    or (proxmox_vm_gpu_changes | length > 0) or (proxmox_vm_gpu_has_pending | bool)

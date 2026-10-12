@@ -5,3 +5,8 @@
 # an idle VM costs nothing and wyvern can use whatever the others are not using.
 vm_cores: 12
 vm_memory_mb: 16384
+
+# Quick Sync: the Intel iGPU (inventories/group_vars/proxmox/gpu.yml) is passed through to this VM.
+# Switches the VM to the q35 machine type with UEFI (OVMF), turns ballooning off and attaches the device.
+# Needs `make gpu-host` to say READY first. See docs/runbooks/gpu-passthrough.md.
+vm_gpu_passthrough: true

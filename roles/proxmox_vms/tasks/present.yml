@@ -39,7 +39,9 @@
     size: "{{ vm_disk_gb }}G"
     state: resized
 
+# A VM that gets the GPU is started by the next play (roles/proxmox_vm_gpu), after its PCI hardware is set.
 - name: Start the VM
   community.proxmox.proxmox_kvm:
     vmid: "{{ vm_id }}"
     state: started
+  when: not (vm_gpu_passthrough | default(false) | bool)

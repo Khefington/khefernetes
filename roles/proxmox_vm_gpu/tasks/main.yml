@@ -1,0 +1,34 @@
+---
+# Runs on the Proxmox host (hosts: proxmox). Why SSH and `qm` instead of the API: only root@pam may attach a raw
+# PCI device to a VM through the API, and the automation token is not root (same reason the template import uses `qm`).
+- name: Find the VMs that get the GPU
+  ansible.builtin.set_fact:
+    proxmox_vm_gpu_vms: >-
+      {{ groups['anvil_cluster'] | map('extract', hostvars) | selectattr('vm_gpu_passthrough', 'defined')
+         | selectattr('vm_gpu_passthrough') | map(attribute='inventory_hostname') | list }}
+
+- name: Check that the host has handed the GPU over (stage 1)
+  ansible.builtin.command:
+    argv:
+      - bash
+      - -c
+      - 'if [ -L "{{ proxmox_vm_gpu_sysfs_root }}/bus/pci/devices/{{ proxmox_vm_gpu_pci_address }}/driver" ]; then basename "$(readlink -f "{{ proxmox_vm_gpu_sysfs_root }}/bus/pci/devices/{{ proxmox_vm_gpu_pci_address }}/driver")"; else echo none; fi'
+  register: proxmox_vm_gpu_driver
+  changed_when: false
+  check_mode: false
+  when: proxmox_vm_gpu_vms | length > 0
+
+- name: Refuse if the GPU is not bound to vfio-pci
+  ansible.builtin.assert:
+    that: proxmox_vm_gpu_driver.stdout == 'vfio-pci'
+    quiet: true
+    fail_msg: >-
+      {{ proxmox_vm_gpu_pci_address }} is on driver '{{ proxmox_vm_gpu_driver.stdout }}', not vfio-pci, so a VM cannot be given the GPU.
+      Run `make gpu-host` and check that it says READY (stage 1 needs a reboot of castellan). Nothing was changed.
+  when: proxmox_vm_gpu_vms | length > 0
+
+- name: Set up each GPU VM
+  ansible.builtin.include_tasks: one.yml
+  loop: "{{ proxmox_vm_gpu_vms }}"
+  loop_control:
+    loop_var: proxmox_vm_gpu_host

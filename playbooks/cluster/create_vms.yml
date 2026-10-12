@@ -33,6 +33,16 @@
   roles:
     - proxmox_vms
 
+# ---- Play 1b: hardware that only the Proxmox host can attach (the GPU), then start those VMs ----
+# Does nothing for VMs without `vm_gpu_passthrough: true`. A plain `make vms` refuses to stop a running VM for this;
+# add ARGS="-e proxmox_vm_gpu_allow_restart=true" when a restart is fine. (Do not use --limit with a VM name here:
+# this play runs on the Proxmox host.)
+- name: Give the VMs their GPU and start them
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - proxmox_vm_gpu
+
 # ---- Play 2: wait for the guests, over normal SSH ----
 - name: Wait for the VMs to finish first boot
   hosts: anvil_cluster

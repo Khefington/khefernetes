@@ -25,4 +25,4 @@ Set per host in `inventories/host_vars/<host>.yml` (`vm_cores`, `vm_memory_mb`);
 (kasrkin 201, wyvern 202, basilisk 203.) Do the control plane first and wait until `kubectl get nodes` shows it Ready. The Jellyfin pod comes back by itself when wyvern is up.
 
 ## Later: hardware transcoding
-The 12900K has an Intel iGPU (Quick Sync) that makes transcoding far cheaper than CPU transcoding. Using it from a VM needs PCI passthrough of the iGPU to wyvern. It is a separate project with trade-offs; worth doing when several people stream at once.
+The 12900K has an Intel iGPU (Quick Sync) that makes transcoding far cheaper than CPU transcoding. Using it from a VM needs PCI passthrough of the iGPU to wyvern. That is `docs/runbooks/gpu-passthrough.md`: once wyvern has the GPU, its 16 GB is locked (no ballooning), which is already counted in the table above.

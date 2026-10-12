@@ -9,7 +9,9 @@
       if [ -L "$d/driver" ]; then echo "driver=$(basename "$(readlink -f "$d/driver")")"; else echo "driver=none"; fi
       echo "running_cmdline=$(cat {{ gpu_passthrough_proc_cmdline }})"
       if grep -q 'intel_iommu=on' {{ gpu_passthrough_grub_cfg }} 2>/dev/null; then echo "grub_cfg=yes"; else echo "grub_cfg=no"; fi
-      if lsinitramfs "/boot/initrd.img-$(uname -r)" 2>/dev/null | grep -q 'vfio'; then echo "initramfs=yes"; else echo "initramfs=no"; fi
+      # grep -c reads the whole listing; grep -q would exit early and, with pipefail, make a correct result look like 'no'.
+      n=$(lsinitramfs "/boot/initrd.img-$(uname -r)" 2>/dev/null | grep -c 'vfio' || true)
+      if [ "${n:-0}" -gt 0 ]; then echo "initramfs=yes"; else echo "initramfs=no"; fi
       if [ -f {{ gpu_passthrough_modprobe_file }} ]; then echo "modprobe=yes"; else echo "modprobe=no"; fi
   register: gpu_passthrough_state_raw
   changed_when: false

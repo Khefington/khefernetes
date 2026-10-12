@@ -27,7 +27,7 @@ The playbook removes the old SSH host keys from your PC too, so the new VMs will
 ## 3. Rebuild, one stage at a time
 | # | Command | You should see |
 |---|---|---|
-| 1 | `make vms` | three VMs created and booted; then `make ping` answers `pong` from all of them |
+| 1 | `make vms` | three VMs created and booted (wyvern with the Intel iGPU attached, once the host is prepared with `make gpu-host`); then `make ping` answers `pong` from all of them |
 | 2 | `make nfs` | the NFS mount tests PASS on every VM, for all three exports |
 | 3 | `make rke2` | the three nodes listed as Ready |
 | 4 | `make etcd-backup` | the timer is installed (the first copy may say "no snapshots yet", which is fine) |
