@@ -1,0 +1,9 @@
+---
+# Order matters: the initramfs is rebuilt first; if that fails, GRUB is left untouched and the host still boots as before.
+- name: Rebuild initramfs
+  ansible.builtin.command: "{{ gpu_passthrough_update_initramfs_cmd }}"
+  changed_when: true
+
+- name: Update grub
+  ansible.builtin.command: "{{ gpu_passthrough_update_grub_cmd }}"
+  changed_when: true

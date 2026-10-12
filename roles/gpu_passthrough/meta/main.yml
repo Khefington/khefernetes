@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: gpu_passthrough
+  author: khefernetes
+  description: "Prepare the Proxmox host to hand the Intel iGPU to a VM (IOMMU kernel options, VFIO modules, keep i915 off the iGPU)"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

@@ -1,0 +1,4 @@
+---
+# The Intel iGPU on castellan that is handed to a VM (values from `make gpu-discover`).
+gpu_passthrough_pci_address: "0000:00:02.0"
+gpu_passthrough_pci_id: "8086:4680"   # AlderLake-S GT1 (vendor:device)

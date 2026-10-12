@@ -1,0 +1,33 @@
+---
+# Default run = checks and a plan only; nothing is written. Writing needs: -e gpu_passthrough_prepare=true
+gpu_passthrough_prepare: false
+
+# The device to hand over (set in inventories/group_vars/proxmox/gpu.yml).
+gpu_passthrough_pci_address: "0000:00:02.0"
+gpu_passthrough_pci_id: "8086:4680"
+
+# Kernel options added to GRUB_CMDLINE_LINUX_DEFAULT (existing options are kept).
+gpu_passthrough_kernel_options:
+  - intel_iommu=on
+  - iommu=pt
+
+# Safety overrides. Leave false unless you understand why the check fired.
+gpu_passthrough_allow_shared_group: false   # iGPU group holds other devices
+gpu_passthrough_allow_display: false        # a monitor is connected to the iGPU
+
+# Paths and commands (overridable so the role can be tested without touching a real host).
+gpu_passthrough_sysfs_root: /sys
+gpu_passthrough_proc_cmdline: /proc/cmdline
+gpu_passthrough_boot_uuids_file: /etc/kernel/proxmox-boot-uuids
+gpu_passthrough_grub_default_file: /etc/default/grub
+gpu_passthrough_grub_d_dir: /etc/default/grub.d
+gpu_passthrough_grub_cfg: /boot/grub/grub.cfg
+gpu_passthrough_initramfs_modules_file: /etc/initramfs-tools/modules
+gpu_passthrough_modules_load_file: /etc/modules-load.d/khefernetes-vfio.conf
+gpu_passthrough_modprobe_file: /etc/modprobe.d/khefernetes-vfio.conf
+gpu_passthrough_update_grub_cmd: update-grub
+gpu_passthrough_update_initramfs_cmd: update-initramfs -u -k all
+gpu_passthrough_vfio_modules:
+  - vfio
+  - vfio_iommu_type1
+  - vfio_pci

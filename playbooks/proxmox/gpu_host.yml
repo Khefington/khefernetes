@@ -1,0 +1,10 @@
+---
+# Stage 1 of the iGPU passthrough: prepare castellan. Default = checks and plan only (writes nothing).
+#   ansible-playbook playbooks/proxmox/gpu_host.yml
+#   ansible-playbook playbooks/proxmox/gpu_host.yml -e gpu_passthrough_prepare=true
+# It never reboots. Read docs/runbooks/gpu-passthrough.md first.
+- name: Prepare the Proxmox host for iGPU passthrough
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - gpu_passthrough

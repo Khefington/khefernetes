@@ -9,7 +9,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
-        proxmox-template gpu-discover dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
+        proxmox-template gpu-discover gpu-host dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -44,6 +44,8 @@ destroy-vms: ## DELETE the three cluster VMs (asks you to type DESTROY); data on
 	$(PLAYBOOK) playbooks/cluster/destroy_vms.yml
 gpu-discover: ## READ-ONLY report: is castellan ready to pass the Intel iGPU to wyvern? (read docs/runbooks/gpu-passthrough.md first)
 	$(PLAYBOOK) playbooks/proxmox/gpu_discover.yml
+gpu-host: ## Stage 1: check castellan and show the plan; apply with ARGS="-e gpu_passthrough_prepare=true" (never reboots)
+	$(PLAYBOOK) playbooks/proxmox/gpu_host.yml
 dns: ## DNS server on castellan: *.home.lan -> the ingress (then point the router at castellan)
 	$(PLAYBOOK) playbooks/proxmox/dns.yml
 vms: ## Clone the template into the cluster VMs

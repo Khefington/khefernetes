@@ -1,6 +1,6 @@
 # Quick Sync for Jellyfin: passing the Intel iGPU to wyvern
 
-**Status:** planned, nothing on castellan has been changed yet. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
+**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is written (`make gpu-host`) but has not been run yet; nothing on castellan has been changed. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
 
 ## Why this is needed
 Jellyfin runs in a container on wyvern, which is a VM. A VM cannot see castellan's integrated GPU unless castellan hands it over (PCIe passthrough with VFIO). After that the VM has its own `/dev/dri`, and the Jellyfin pod can be given that device.
@@ -9,13 +9,26 @@ The i9-12900K's UHD 770 does hardware H.264, HEVC (also 10-bit) and VP9 decoding
 ## The plan, one stage at a time (each stage ends with a check and can be undone)
 | Stage | What | Touches | Status |
 |---|---|---|---|
-| 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | ready |
-| 1 | BIOS: turn on VT-d. Host: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs, **reboot castellan** | castellan boot config | after you read stage 0's output |
+| 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | done |
+| 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | ready to run |
 | 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`); VM rebuilt through `make vms` | wyvern only | after stage 1 works |
 | 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo` | wyvern only | after stage 2 |
 | 4 | Jellyfin pod: mount `/dev/dri`, add the `render` group, set `jellyfin_encoding_config` (QSV), prove with an ffmpeg test | the Jellyfin deployment | last |
 
-I will not run stages 1 and 2 until the stage 0 report shows what this particular machine needs (GRUB or systemd-boot decides where the kernel options go, and the IOMMU group decides whether it is safe at all).
+The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.8.12-43-pve, kernel line `quiet`, the IOMMU is already active (19 groups), the iGPU (`0000:00:02.0`, `8086:4680`) is alone in IOMMU group 0, no monitor is connected, and `vfio-pci` is available. So the kernel options go in `/etc/default/grub`.
+
+## Stage 1 in detail: `make gpu-host`
+1. **Plan only (default).** `make gpu-host` writes nothing. It checks that: the host boots with GRUB; `/etc/default/grub` has the expected line; the device at `0000:00:02.0` really is `8086:4680`; its IOMMU group holds exactly that one device; no monitor is connected to it. If any check fails the play stops with the reason. It then prints the kernel line before and after, the files it would write, and the current status.
+2. **Apply.** `make gpu-host ARGS="-e gpu_passthrough_prepare=true"` writes four things (every edited file is first copied aside as `file.<number>.<timestamp>~`):
+   - `/etc/default/grub`: `quiet` becomes `quiet intel_iommu=on iommu=pt` (existing options are kept, nothing is duplicated).
+   - `/etc/initramfs-tools/modules`: a marked block loading `vfio`, `vfio_iommu_type1`, `vfio_pci` early.
+   - `/etc/modules-load.d/khefernetes-vfio.conf`: the same three modules at boot.
+   - `/etc/modprobe.d/khefernetes-vfio.conf`: `options vfio-pci ids=8086:4680` plus `softdep i915 pre: vfio-pci` and `softdep xe pre: vfio-pci`, so `vfio-pci` claims the iGPU before the Intel graphics drivers can.
+   Then it rebuilds the initramfs (`update-initramfs -u -k all`) and then GRUB (`update-grub`). If the initramfs step fails, GRUB is left alone, so castellan still boots as it does today. **It never reboots.**
+3. **Before you reboot:** run `make backup-now` and `make etcd-backup-now`. The reboot takes the three VMs, NFS and DNS down for several minutes (risk 3).
+4. **After the reboot:** `make gpu-host` again. It reports `READY` when the iGPU is bound to `vfio-pci`, `PENDING REBOOT` when the files are in place but the old driver still owns it, `NOT CONFIGURED` otherwise. Only `READY` means stage 2 can start.
+5. If the host does not come up properly, the previous GRUB entries are still in the boot menu (choose an older kernel or edit the line at the GRUB prompt by pressing `e` and deleting `intel_iommu=on iommu=pt`), then follow "If it goes wrong".
+6. Another file under `/etc/default/grub.d/` can override the kernel line; the play warns if it finds one. The status report shows the options the running kernel actually has.
 
 ## Risks, in plain words
 1. **The host loses the iGPU.** A monitor plugged into castellan goes blank once VFIO owns the GPU. Everything is still reachable by SSH and the web UI, but if the network ever breaks you would have no local screen. Keep a second way in (for example a USB-Ethernet adapter or a cheap GPU) in mind before relying on this.
@@ -31,7 +44,14 @@ I will not run stages 1 and 2 until the stage 0 report shows what this particula
 
 ## If it goes wrong (works over SSH, no screen needed)
 1. Remove the passthrough from the VM: `qm set 202 --delete hostpci0` (or re-run `make vms` after taking `hostpci0` out of the inventory).
-2. Put the host back: delete the repo-written files under `/etc/modprobe.d/` (`khefernetes-vfio.conf`) and `/etc/modules-load.d/`, remove the kernel options I added (the stage 1 play prints exactly which), `update-initramfs -u -k all`, reboot.
+2. Put the host back (all over SSH):
+   ```
+   rm /etc/modprobe.d/khefernetes-vfio.conf /etc/modules-load.d/khefernetes-vfio.conf
+   # in /etc/initramfs-tools/modules delete the block between "# BEGIN khefernetes vfio" and "# END khefernetes vfio"
+   # in /etc/default/grub change the line back to GRUB_CMDLINE_LINUX_DEFAULT="quiet"  (the .<timestamp>~ copy next to it is the original)
+   update-initramfs -u -k all && update-grub
+   reboot
+   ```
 3. Set `jellyfin_encoding_config` back to `HardwareAccelerationType: none` and run `make jellyfin-provision`. Jellyfin transcodes in software again, as it does today.
 
 ## Not doing

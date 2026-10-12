@@ -1,0 +1,87 @@
+---
+# Read-only. Every check that could make the change unsafe fails the play here, before anything is written.
+- name: Is the host booted through proxmox-boot-tool (systemd-boot)?
+  ansible.builtin.stat:
+    path: "{{ gpu_passthrough_boot_uuids_file }}"
+  register: gpu_passthrough_boot_uuids
+
+- name: Read the GRUB defaults file
+  ansible.builtin.slurp:
+    src: "{{ gpu_passthrough_grub_default_file }}"
+  register: gpu_passthrough_grub_raw
+  failed_when: false
+
+- name: Read the iGPU's PCI ids, IOMMU group and driver
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      d="{{ gpu_passthrough_sysfs_root }}/bus/pci/devices/{{ gpu_passthrough_pci_address }}"
+      [ -d "$d" ] || { echo "present=no"; exit 0; }
+      echo "present=yes"
+      echo "id=$(cat "$d/vendor" | sed 's/^0x//'):$(cat "$d/device" | sed 's/^0x//')"
+      if [ -d "$d/iommu_group/devices" ]; then
+        echo "group_devices=$(ls "$d/iommu_group/devices" | wc -l)"
+      else
+        echo "group_devices=none"
+      fi
+      if [ -L "$d/driver" ]; then echo "driver=$(basename "$(readlink -f "$d/driver")")"; else echo "driver=none"; fi
+      echo "connected=$(cat {{ gpu_passthrough_sysfs_root }}/class/drm/card*-*/status 2>/dev/null | grep -c '^connected' || true)"
+  register: gpu_passthrough_probe
+  changed_when: false
+  check_mode: false
+
+- name: Look for other files that set the kernel options
+  ansible.builtin.find:
+    paths: "{{ gpu_passthrough_grub_d_dir }}"
+    patterns: "*.cfg"
+    contains: '^\s*GRUB_CMDLINE_LINUX_DEFAULT='
+  register: gpu_passthrough_grub_d
+  failed_when: false
+
+- name: Work out the facts
+  ansible.builtin.set_fact:
+    gpu_passthrough_probe_facts: >-
+      {{ dict(gpu_passthrough_probe.stdout_lines | map('split', '=', 1) | list) }}
+    gpu_passthrough_grub_line: >-
+      {{ ((gpu_passthrough_grub_raw.content | default('') | b64decode)
+          | regex_search('(?m)^GRUB_CMDLINE_LINUX_DEFAULT="[^"]*"')) | default('', true) }}
+
+- name: Work out the kernel options to add
+  ansible.builtin.set_fact:
+    gpu_passthrough_current_options: >-
+      {{ gpu_passthrough_grub_line | regex_replace('^GRUB_CMDLINE_LINUX_DEFAULT="(.*)"$', '\1') | split }}
+- name: Work out the new kernel options line
+  ansible.builtin.set_fact:
+    gpu_passthrough_missing_options: >-
+      {{ gpu_passthrough_kernel_options | reject('in', gpu_passthrough_current_options) | list }}
+    gpu_passthrough_new_line: >-
+      GRUB_CMDLINE_LINUX_DEFAULT="{{ (gpu_passthrough_current_options
+      + (gpu_passthrough_kernel_options | reject('in', gpu_passthrough_current_options) | list)) | join(' ') }}"
+
+- name: Refuse to continue if anything looks unsafe
+  ansible.builtin.assert:
+    that:
+      - not gpu_passthrough_boot_uuids.stat.exists
+      - gpu_passthrough_grub_line | length > 0
+      - gpu_passthrough_probe_facts.present == 'yes'
+      - gpu_passthrough_probe_facts.id == gpu_passthrough_pci_id
+      - gpu_passthrough_probe_facts.group_devices != 'none'
+      - gpu_passthrough_allow_shared_group | bool or gpu_passthrough_probe_facts.group_devices == '1'
+      - gpu_passthrough_allow_display | bool or gpu_passthrough_probe_facts.connected == '0'
+    quiet: true
+    fail_msg: >-
+      Not safe to continue. Checked: host boots with GRUB (not systemd-boot via proxmox-boot-tool): {{ not gpu_passthrough_boot_uuids.stat.exists }};
+      {{ gpu_passthrough_grub_default_file }} has a double-quoted GRUB_CMDLINE_LINUX_DEFAULT line: {{ gpu_passthrough_grub_line | length > 0 }};
+      device {{ gpu_passthrough_pci_address }} exists: {{ gpu_passthrough_probe_facts.present }};
+      its id is {{ gpu_passthrough_probe_facts.id | default('?') }} (expected {{ gpu_passthrough_pci_id }});
+      IOMMU group devices: {{ gpu_passthrough_probe_facts.group_devices | default('?') }} (needs exactly 1; 'none' means the IOMMU is off, check VT-d in the BIOS);
+      monitors connected to the iGPU: {{ gpu_passthrough_probe_facts.connected | default('?') }} (needs 0).
+      The two allow_* switches in the role defaults override the group and monitor checks; read the runbook before using them.
+
+- name: Warn about other files that set the same kernel option line
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ gpu_passthrough_grub_d.files | map(attribute='path') | join(', ') }} also set GRUB_CMDLINE_LINUX_DEFAULT
+      and can override the line this play edits. Check the 'running kernel options' line in the status report after the reboot.
+  when: gpu_passthrough_grub_d.files | default([]) | length > 0

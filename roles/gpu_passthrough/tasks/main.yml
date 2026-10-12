@@ -1,0 +1,12 @@
+---
+# Stage 1 of the iGPU passthrough. Read docs/runbooks/gpu-passthrough.md first.
+# Order: checks (always) -> changes (only with gpu_passthrough_prepare=true) -> status report (always).
+- name: Check that this host is safe to change
+  ansible.builtin.include_tasks: preflight.yml
+
+- name: Make the changes
+  ansible.builtin.include_tasks: apply.yml
+  when: gpu_passthrough_prepare | bool
+
+- name: Report where things stand
+  ansible.builtin.include_tasks: status.yml

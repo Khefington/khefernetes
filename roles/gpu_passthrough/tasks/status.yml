@@ -1,0 +1,50 @@
+---
+# Read-only. READY / PENDING REBOOT / NOT CONFIGURED.
+- name: Check what is configured and what is running
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      d="{{ gpu_passthrough_sysfs_root }}/bus/pci/devices/{{ gpu_passthrough_pci_address }}"
+      if [ -L "$d/driver" ]; then echo "driver=$(basename "$(readlink -f "$d/driver")")"; else echo "driver=none"; fi
+      echo "running_cmdline=$(cat {{ gpu_passthrough_proc_cmdline }})"
+      if grep -q 'intel_iommu=on' {{ gpu_passthrough_grub_cfg }} 2>/dev/null; then echo "grub_cfg=yes"; else echo "grub_cfg=no"; fi
+      if lsinitramfs "/boot/initrd.img-$(uname -r)" 2>/dev/null | grep -q 'vfio'; then echo "initramfs=yes"; else echo "initramfs=no"; fi
+      if [ -f {{ gpu_passthrough_modprobe_file }} ]; then echo "modprobe=yes"; else echo "modprobe=no"; fi
+  register: gpu_passthrough_state_raw
+  changed_when: false
+  check_mode: false
+
+- name: Work out the status
+  ansible.builtin.set_fact:
+    gpu_passthrough_state: >-
+      {{ dict(gpu_passthrough_state_raw.stdout_lines | map('split', '=', 1) | list) }}
+
+- name: Decide
+  ansible.builtin.set_fact:
+    gpu_passthrough_ready: "{{ gpu_passthrough_state.driver == 'vfio-pci' }}"
+    gpu_passthrough_configured: >-
+      {{ gpu_passthrough_state.grub_cfg == 'yes' and gpu_passthrough_state.initramfs == 'yes'
+         and gpu_passthrough_state.modprobe == 'yes' }}
+
+- name: Status
+  ansible.builtin.debug:
+    msg:
+      - >-
+        {{ 'READY: the iGPU is bound to vfio-pci. Stage 2 (give it to wyvern) can go ahead.' if gpu_passthrough_ready | bool
+           else ('PENDING REBOOT: castellan is configured, but the iGPU is still on ' ~ gpu_passthrough_state.driver ~ '. Reboot castellan when it is a quiet moment, then run this again.'
+                 if gpu_passthrough_configured | bool else
+                 'NOT CONFIGURED: nothing has been changed yet.') }}
+      - "iGPU driver now: {{ gpu_passthrough_state.driver }}"
+      - "running kernel options: {{ gpu_passthrough_state.running_cmdline }}"
+      - "GRUB config has the IOMMU options: {{ gpu_passthrough_state.grub_cfg }}; initramfs of the running kernel has vfio: {{ gpu_passthrough_state.initramfs }}; modprobe file present: {{ gpu_passthrough_state.modprobe }}"
+
+- name: What running with -e gpu_passthrough_prepare=true would do
+  ansible.builtin.debug:
+    msg:
+      - "Kernel line now:  {{ gpu_passthrough_grub_line }}"
+      - "Kernel line then: {{ gpu_passthrough_new_line }}"
+      - "Writes: {{ gpu_passthrough_initramfs_modules_file }} (vfio modules), {{ gpu_passthrough_modules_load_file }}, {{ gpu_passthrough_modprobe_file }} (bind {{ gpu_passthrough_pci_id }} to vfio-pci)"
+      - "Runs: {{ gpu_passthrough_update_initramfs_cmd }}, then {{ gpu_passthrough_update_grub_cmd }}. Does NOT reboot."
+      - "BEFORE rebooting: make backup-now and make etcd-backup-now. While castellan restarts, all three VMs, NFS and DNS are down for several minutes."
+  when: not (gpu_passthrough_prepare | bool) and not gpu_passthrough_configured | bool

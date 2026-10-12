@@ -1,0 +1,57 @@
+---
+# Writes four things. Every edited file is copied aside first (backup: true -> file.<timestamp>~).
+- name: Add the IOMMU options to the GRUB kernel line
+  ansible.builtin.lineinfile:
+    path: "{{ gpu_passthrough_grub_default_file }}"
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: "{{ gpu_passthrough_new_line }}"
+    backup: true
+    mode: "0644"
+  notify:
+    - Rebuild initramfs
+    - Update grub
+
+- name: Load the VFIO modules early (initramfs)
+  ansible.builtin.blockinfile:
+    path: "{{ gpu_passthrough_initramfs_modules_file }}"
+    marker: "# {mark} khefernetes vfio"
+    block: "{{ gpu_passthrough_vfio_modules | join('\n') }}"
+    backup: true
+    create: true
+    mode: "0644"
+  notify:
+    - Rebuild initramfs
+    - Update grub
+
+- name: Load the VFIO modules at boot
+  ansible.builtin.copy:
+    dest: "{{ gpu_passthrough_modules_load_file }}"
+    content: |
+      # Managed by khefernetes (roles/gpu_passthrough)
+      {% for module in gpu_passthrough_vfio_modules %}
+      {{ module }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Rebuild initramfs
+    - Update grub
+
+- name: Bind the iGPU to vfio-pci and keep i915 and xe from taking it first
+  ansible.builtin.copy:
+    dest: "{{ gpu_passthrough_modprobe_file }}"
+    content: |
+      # Managed by khefernetes (roles/gpu_passthrough)
+      options vfio-pci ids={{ gpu_passthrough_pci_id }}
+      softdep i915 pre: vfio-pci
+      softdep xe pre: vfio-pci
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Rebuild initramfs
+    - Update grub
+
+- name: Run the rebuilds now, so the status below reflects them
+  ansible.builtin.meta: flush_handlers
