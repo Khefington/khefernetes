@@ -10,3 +10,19 @@
 - name: Remember the API address
   ansible.builtin.set_fact:
     jellyfin_api_url: "http://{{ jellyfin_svc_ip.stdout }}:8096"
+
+# The API key lives in a Kubernetes Secret created by `make jellyfin-provision`.
+- name: Read the API key from the cluster
+  ansible.builtin.shell:
+    cmd: "set -o pipefail; {{ kubectl_cmd }} -n {{ media_namespace }} get secret jellyfin-api -o jsonpath='{.data.api-key}' | base64 -d"
+    executable: /bin/bash
+  register: jellyfin_api_key_read
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Remember it (empty when provisioning has not run yet)
+  ansible.builtin.set_fact:
+    jellyfin_api_key: "{{ jellyfin_api_key_read.stdout | default('') if jellyfin_api_key_read.rc == 0 else '' }}"
+  no_log: true

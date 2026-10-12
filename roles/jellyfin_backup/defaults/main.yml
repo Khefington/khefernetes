@@ -1,5 +1,5 @@
 ---
-jellyfin_backup_schedule: "15 3 * * *" # every night at 03:15 (cluster timezone)
+jellyfin_backup_schedule: "30 5 * * *" # every night at 05:30 (cluster timezone), after the 02:00 and 03:00 thumbnail tasks
 jellyfin_backup_keep: 14 # newest N of each kind are kept
 jellyfin_backup_manifest_path: "{{ k8s_app_manifest_dir }}/jellyfin-backup.yaml"
 jellyfin_backup_run_now: false # -e jellyfin_backup_run_now=true runs one backup immediately as a test

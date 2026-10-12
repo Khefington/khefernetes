@@ -1,3 +1,4 @@
 ---
-# Per-host override: the control plane needs less memory than the default.
+# Control plane: etcd and the API server only. Small on purpose; Jellyfin never runs here.
+vm_cores: 2
 vm_memory_mb: 4096

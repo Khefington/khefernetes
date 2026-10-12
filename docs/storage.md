@@ -8,7 +8,9 @@ data/
   downloads/<library>/    finished downloads per category; hardlinked into media/
   backups/jellyfin/       nightly Jellyfin backups
 /mnt/staging/incomplete   (2TB SSD, separate export) in-progress downloads
-/mnt/staging/appdata      (2TB SSD, separate export) app files; jellyfin/trickplay is mounted at /config/data/trickplay
+/mnt/staging/appdata      (2TB SSD, separate export) app files that are expensive to regenerate:
+                            jellyfin/trickplay, jellyfin/metadata, jellyfin/subtitles, jellyfin/attachments
+                            (the list is `jellyfin_persisted_dirs`; each is mounted into the Jellyfin pod)
 ```
 
 `media_libraries` in `inventories/group_vars/all/media.yml` is the single source of truth.
@@ -51,3 +53,11 @@ Jellyfin itself mounts only `media/` read-only and ignores the folder unless you
 - **Trickplay lives on the 2TB SSD** (`/mnt/staging/appdata/jellyfin/trickplay`), not in `/config`, so it is fast to browse and
   survives a rebuild: a new Jellyfin finds the existing files and adopts them instead of regenerating. It is the one part of
   `/config` that is on NFS; the SQLite database must never be. Keep at least 20% of the SSD free.
+
+## What stays on the node, and why
+Jellyfin's SQLite database (`/config/data/jellyfin.db`) stays on the node-local volume, because SQLite needs a real local disk
+(file locking over NFS is unreliable). It is protected by the nightly backup instead. Everything that is only files and costly to
+recreate (thumbnails, artwork, chapter images, extracted subtitles) is on the SSD and survives a rebuild.
+
+The database remembers where each image is. If it is restored on a node whose metadata folder is empty, Jellyfin logs
+`Could not find file '/config/metadata/...'` for every missing image until it is refreshed. Keeping the metadata folder on the SSD avoids this.

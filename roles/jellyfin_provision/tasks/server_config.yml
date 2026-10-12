@@ -1,0 +1,21 @@
+---
+# Merge our settings into Jellyfin's current server configuration and save only if something changed.
+- name: Read the server configuration
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/System/Configuration"
+  register: jellyfin_provision_server_cfg
+  changed_when: false
+
+- name: Work out the new configuration
+  ansible.builtin.set_fact:
+    jellyfin_provision_server_cfg_new: "{{ jellyfin_provision_server_cfg.json | combine(jellyfin_server_config, recursive=true) }}"
+
+- name: Save it
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/System/Configuration"
+    method: POST
+    body_format: json
+    body: "{{ jellyfin_provision_server_cfg_new }}"
+    status_code: 204
+  when: jellyfin_provision_server_cfg_new != jellyfin_provision_server_cfg.json
+  changed_when: true

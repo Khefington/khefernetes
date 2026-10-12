@@ -1,10 +1,14 @@
 ---
-- name: Make sure the API key is in the vault
+- name: Make sure the API key Secret exists (created by `make jellyfin-provision`)
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get secret jellyfin-api -o name"
+  register: jellyfin_backup_secret
+  changed_when: false
+  failed_when: false
+
+- name: Stop with a helpful message if it is missing
   ansible.builtin.assert:
-    that:
-      - vault_jellyfin_api_key is defined
-      - vault_jellyfin_api_key | length > 10
-    fail_msg: "Add vault_jellyfin_api_key to the vault (see docs/runbooks/jellyfin-backup.md)."
+    that: jellyfin_backup_secret.rc == 0
+    fail_msg: "The Secret 'jellyfin-api' does not exist yet. Run `make jellyfin-provision` first; it creates the API key and the Secret."
 
 - name: Create the manifest folder
   ansible.builtin.file:
@@ -12,12 +16,11 @@
     state: directory
     mode: "0755"
 
-- name: Write the manifest (contains the API key, root only)
+- name: Write the manifest
   ansible.builtin.template:
     src: jellyfin-backup.yaml.j2
     dest: "{{ jellyfin_backup_manifest_path }}"
-    mode: "0600"
-  diff: false
+    mode: "0644"
 
 - name: Kubectl apply
   ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ jellyfin_backup_manifest_path }}"

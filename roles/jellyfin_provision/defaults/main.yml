@@ -1,0 +1,33 @@
+---
+# How the playbook reaches Jellyfin: through the ingress, exactly like a browser does.
+jellyfin_provision_url: "http://{{ ingress_vip }}"
+jellyfin_provision_host: "jellyfin.{{ lan_domain }}" # sent as the Host header so the ingress picks the right app
+jellyfin_provision_retries: 60 # waits for Jellyfin to answer: 60 x 5 s = 5 minutes
+jellyfin_provision_restart_pause: 15 # seconds to let Jellyfin go down before waiting for it to come back
+
+# First-run wizard answers (only used when the wizard has never been completed).
+jellyfin_provision_admin_name: Khef
+jellyfin_provision_admin_password: "{{ vault_jellyfin_khef_password }}"
+jellyfin_provision_server_name: khefernetes
+jellyfin_provision_ui_culture: en-US
+jellyfin_provision_language: en
+jellyfin_provision_country: US
+jellyfin_provision_remote_access: false # "allow remote connections"; flip to true when the server is exposed
+
+# The backup job's API key is created here and stored as a Kubernetes Secret.
+jellyfin_provision_backup_key_app: khefernetes-backup
+jellyfin_provision_create_secret: true
+
+# Print every plugin's saved settings (secrets masked) so you can see which keys exist:
+#   make jellyfin-provision -e jellyfin_provision_show_plugin_config=true
+jellyfin_provision_show_plugin_config: false
+jellyfin_provision_scan_after: false # start a library scan at the end
+
+# What to configure. The real values live in inventories/group_vars/all/jellyfin.yml.
+jellyfin_users: []
+jellyfin_libraries: []
+jellyfin_library_options: {}
+jellyfin_server_config: {}
+jellyfin_plugin_repositories: []
+jellyfin_plugins: []
+jellyfin_plugin_settings: {}

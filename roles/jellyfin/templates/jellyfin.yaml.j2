@@ -109,11 +109,13 @@ spec:
               mountPath: /media
               subPath: media
               readOnly: true         # Jellyfin can never modify or delete the library
-            # Trickplay is stored on the 2TB SSD (NFS), not in /config, so a rebuilt cluster keeps it.
-            # (Jellyfin's SQLite database stays on the node-local volume; only these image files are on NFS.)
+            # Expensive-to-regenerate files (trickplay, ...) live on the 2TB SSD (NFS), not in /config, so a
+            # rebuilt cluster keeps them. Jellyfin's SQLite database stays on the node-local volume.
+{% for d in jellyfin_persisted_dirs %}
             - name: appdata
-              mountPath: /config/data/trickplay
-              subPath: {{ jellyfin_trickplay_subpath }}
+              mountPath: {{ d.mount }}
+              subPath: {{ d.subpath }}
+{% endfor %}
             # Jellyfin's own Dashboard > Backups page reads and writes /config/data/backups. Pointing it at the
             # backup folder on the HDD means: backups made in the UI land safely off the node, the nightly job's
             # files show up in the UI with a Restore button, and a rebuilt cluster finds them straight away.

@@ -1,0 +1,11 @@
+---
+# Configure a running Jellyfin through its API: first-run wizard, admin, plugins, settings, libraries, users,
+# and the API key the nightly backup uses. What it sets is in inventories/group_vars/all/jellyfin.yml.
+#   ansible-playbook playbooks/apps/jellyfin_provision.yml
+#   ansible-playbook playbooks/apps/jellyfin_provision.yml -e jellyfin_provision_show_plugin_config=true
+# Safe to repeat: it looks first and only changes what differs. Needs `make jellyfin` to have run.
+- name: Configure Jellyfin
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - jellyfin_provision

@@ -99,39 +99,41 @@
     var: jellyfin_checks.stdout_lines
 
 - name: Read the library settings from Jellyfin's API
-  when: vault_jellyfin_api_key is defined
   block:
-    - name: Find Jellyfin
+    - name: Find Jellyfin and its API key
       ansible.builtin.import_tasks: api_endpoint.yml
 
-    - name: Ask for the library list
-      ansible.builtin.uri:
-        url: "{{ jellyfin_api_url }}/Library/VirtualFolders"
-        headers:
-          Authorization: 'MediaBrowser Token="{{ vault_jellyfin_api_key }}"'
-        return_content: true
-      register: jellyfin_libs
-      no_log: true
-      changed_when: false
-      check_mode: false
+    - name: Use the key (skipped until `make jellyfin-provision` has created it)
+      when: jellyfin_api_key | length > 0
+      block:
+        - name: Ask for the library list
+          ansible.builtin.uri:
+            url: "{{ jellyfin_api_url }}/Library/VirtualFolders"
+            headers:
+              Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+            return_content: true
+          register: jellyfin_libs
+          no_log: true
+          changed_when: false
+          check_mode: false
 
-    - name: Trickplay settings per library
-      ansible.builtin.debug:
-        msg: >-
-          {{ item.Name }}: extract={{ item.LibraryOptions.EnableTrickplayImageExtraction | default('?') }},
-          extract during scan={{ item.LibraryOptions.ExtractTrickplayImagesDuringLibraryScan | default('?') }},
-          SAVE NEXT TO MEDIA={{ item.LibraryOptions.SaveTrickplayWithMedia | default('?') }}
-      loop: "{{ jellyfin_libs.json }}"
-      loop_control:
-        label: "{{ item.Name }}"
+        - name: Trickplay settings per library
+          ansible.builtin.debug:
+            msg: >-
+              {{ item.Name }}: extract={{ item.LibraryOptions.EnableTrickplayImageExtraction | default('?') }},
+              extract during scan={{ item.LibraryOptions.ExtractTrickplayImagesDuringLibraryScan | default('?') }},
+              SAVE NEXT TO MEDIA={{ item.LibraryOptions.SaveTrickplayWithMedia | default('?') }}
+          loop: "{{ jellyfin_libs.json }}"
+          loop_control:
+            label: "{{ item.Name }}"
 
-    - name: Warn about the setting that cannot work on a read-only library
-      ansible.builtin.debug:
-        msg: >-
-          Library '{{ item.Name }}' has "Save trickplay images next to media" ON. The library is mounted read-only,
-          so every write fails. Trickplay is stored on the HDD instead (the 2TB SSD, mounted at /config/data/trickplay).
-          Turn it off: Dashboard > Libraries > {{ item.Name }} > uncheck it,
-          then Dashboard > Scheduled Tasks > "Generate Trickplay Images" > run.
-      loop: "{{ jellyfin_libs.json | selectattr('LibraryOptions.SaveTrickplayWithMedia', 'equalto', true) | list }}"
-      loop_control:
-        label: "{{ item.Name }}"
+        - name: Warn about the setting that cannot work on a read-only library
+          ansible.builtin.debug:
+            msg: >-
+              Library '{{ item.Name }}' has "Save trickplay images next to media" ON. The library is mounted read-only,
+              so every write fails. Trickplay is stored on the HDD instead (the 2TB SSD, mounted at /config/data/trickplay).
+              Turn it off: Dashboard > Libraries > {{ item.Name }} > uncheck it,
+              then Dashboard > Scheduled Tasks > "Generate Trickplay Images" > run.
+          loop: "{{ jellyfin_libs.json | selectattr('LibraryOptions.SaveTrickplayWithMedia', 'equalto', true) | list }}"
+          loop_control:
+            label: "{{ item.Name }}"

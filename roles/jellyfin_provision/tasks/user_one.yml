@@ -1,0 +1,47 @@
+---
+- name: Find the account
+  ansible.builtin.set_fact:
+    jellyfin_provision_account: "{{ (jellyfin_provision_users.json | selectattr('Name', 'equalto', user.name) | list | first) | default({}) }}"
+
+- name: Create the account (the password is only ever set here, never overwritten later)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Users/New"
+    method: POST
+    body_format: json
+    body:
+      Name: "{{ user.name }}"
+      Password: "{{ user.password }}"
+  register: jellyfin_provision_created
+  when: jellyfin_provision_account | length == 0
+  no_log: true
+  changed_when: true
+
+- name: Use the new account if we just made it
+  ansible.builtin.set_fact:
+    jellyfin_provision_account: "{{ jellyfin_provision_created.json }}"
+  when: jellyfin_provision_account | length == 0
+
+- name: Which libraries may this user see?
+  ansible.builtin.set_fact:
+    jellyfin_provision_visible: >-
+      {{ jellyfin_provision_folders_for_users.json
+         | selectattr('Name', 'in', user.libraries) | map(attribute='ItemId') | list
+         if (user.libraries | default('all')) != 'all' else [] }}
+
+- name: Work out the policy it should have
+  ansible.builtin.set_fact:
+    jellyfin_provision_policy_new: >-
+      {{ jellyfin_provision_account.Policy
+         | combine({'IsAdministrator': user.admin | default(false) | bool,
+                    'EnableAllFolders': (user.libraries | default('all')) == 'all',
+                    'EnabledFolders': jellyfin_provision_visible}) }}
+
+- name: Apply the policy if it differs
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Users/{{ jellyfin_provision_account.Id }}/Policy"
+    method: POST
+    body_format: json
+    body: "{{ jellyfin_provision_policy_new }}"
+    status_code: 204
+  when: jellyfin_provision_policy_new != jellyfin_provision_account.Policy
+  changed_when: true

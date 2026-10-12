@@ -1,13 +1,4 @@
-# Managed by Ansible (khefernetes). Contains a secret: keep this file mode 0600.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: jellyfin-api
-  namespace: {{ media_namespace }}
-type: Opaque
-stringData:
-  api-key: "{{ vault_jellyfin_api_key }}"
----
+# Managed by Ansible (khefernetes). The API key lives in the Secret 'jellyfin-api', created by `make jellyfin-provision`.
 apiVersion: batch/v1
 kind: CronJob
 metadata:

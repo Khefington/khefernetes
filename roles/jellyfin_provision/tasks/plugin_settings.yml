@@ -1,0 +1,21 @@
+---
+- name: Read the installed plugins
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins"
+  register: jellyfin_provision_plugins_cfg
+  changed_when: false
+
+- name: Apply the settings from the inventory
+  ansible.builtin.include_tasks: plugin_settings_one.yml
+  loop: "{{ jellyfin_plugin_settings | dict2items }}"
+  loop_control:
+    loop_var: setting
+    label: "{{ setting.key }}"
+
+- name: Show every plugin's saved settings (secrets masked)
+  ansible.builtin.include_tasks: plugin_show.yml
+  loop: "{{ jellyfin_provision_plugins_cfg.json | selectattr('ConfigurationFileName', 'defined') | rejectattr('ConfigurationFileName', 'equalto', '') | list }}"
+  loop_control:
+    loop_var: plugin
+    label: "{{ plugin.Name }}"
+  when: jellyfin_provision_show_plugin_config | bool

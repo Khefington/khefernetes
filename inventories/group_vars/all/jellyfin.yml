@@ -1,0 +1,76 @@
+---
+# Jellyfin as code: everything `make jellyfin-provision` sets up inside Jellyfin.
+# It runs after `make jellyfin`, is safe to repeat, and only changes what differs.
+# Secrets are never written here: passwords come from the vault (vault_*).
+
+# --- Users ---------------------------------------------------------------------------------
+# password: only used when the account is created; later runs never overwrite it.
+# libraries: 'all' or a list of library names the user may see.
+# To add someone: add an entry (and its vault_ password), then `make jellyfin-provision`.
+jellyfin_users:
+  - name: Khef
+    admin: true
+    libraries: all
+    password: "{{ vault_jellyfin_khef_password }}"
+
+# --- Libraries -----------------------------------------------------------------------------
+# path is where the folder appears INSIDE the Jellyfin pod (the library is mounted at /media).
+# type: movies, tvshows, music, books, ... (Jellyfin's collection types)
+jellyfin_libraries:
+  - { name: Movies, type: movies, path: /media/movies }
+  - { name: Shows, type: tvshows, path: /media/tv }
+  - { name: Music, type: music, path: /media/music }
+  - { name: Books, type: books, path: /media/books }
+
+# Options applied to every library (a library entry can add `options:` to override).
+# The media library is mounted read-only, so nothing may be saved next to the media.
+# Thumbnails and chapter images are built overnight by the scheduled tasks instead of during a scan,
+# so scanning stays fast.
+jellyfin_library_options:
+  SaveLocalMetadata: false
+  MetadataSavers: []
+  SaveSubtitlesWithMedia: false
+  SaveLyricsWithMedia: false
+  SaveTrickplayWithMedia: false
+  EnableTrickplayImageExtraction: true
+  ExtractTrickplayImagesDuringLibraryScan: false
+  EnableChapterImageExtraction: true
+  ExtractChapterImagesDuringLibraryScan: false
+  PreferredMetadataLanguage: en
+  MetadataCountryCode: US
+
+# --- Server settings -----------------------------------------------------------------------
+# Merged into Jellyfin's server configuration (Dashboard > General / Libraries / Playback).
+jellyfin_server_config:
+  PreferredMetadataLanguage: en
+  MetadataCountryCode: US
+  # How many items are scanned / refreshed at the same time. Many films share actors, and too many
+  # at once makes them fight over the same actor photo ("file is being used by another process").
+  LibraryScanFanoutConcurrency: 4
+  LibraryMetadataRefreshConcurrency: 4
+  ParallelImageEncodingLimit: 2
+  TrickplayOptions:
+    ProcessThreads: 4
+    EnableKeyFrameOnlyExtraction: true # far faster; thumbnails land on key frames, so spacing is slightly uneven
+    ProcessPriority: BelowNormal # the web interface stays responsive while thumbnails are built
+
+# --- Plugins -------------------------------------------------------------------------------
+# Jellyfin's own repository is always there. Add third-party ones here.
+jellyfin_plugin_repositories:
+  - { Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true }
+
+# name must match the catalogue name exactly. Without a version the newest compatible one is installed;
+# the end of the run prints what was installed: copy those versions here to pin them.
+# Third-party plugins run inside Jellyfin with full access, so add only what you have looked at.
+jellyfin_plugins:
+  - { name: Open Subtitles }
+  - { name: Intro Skipper }
+
+# Plugin settings, keyed by plugin name; merged into the plugin's saved settings.
+# Find the setting names with: make jellyfin-provision -e jellyfin_provision_show_plugin_config=true
+# Example (names to be confirmed from that output):
+#   jellyfin_plugin_settings:
+#     Open Subtitles:
+#       Username: "{{ vault_opensubtitles_username }}"
+#       Password: "{{ vault_opensubtitles_password }}"
+jellyfin_plugin_settings: {}

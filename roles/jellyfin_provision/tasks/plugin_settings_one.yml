@@ -1,0 +1,27 @@
+---
+- name: Find the plugin
+  ansible.builtin.set_fact:
+    jellyfin_provision_plugin_id: "{{ (jellyfin_provision_plugins_cfg.json | selectattr('Name', 'equalto', setting.key) | list | first | default({})).Id | default('') }}"
+
+- name: Stop if it is not installed
+  ansible.builtin.assert:
+    that: jellyfin_provision_plugin_id | length > 0
+    fail_msg: "Plugin '{{ setting.key }}' is not installed, so its settings cannot be applied. Add it to jellyfin_plugins."
+
+- name: Read its current settings
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins/{{ jellyfin_provision_plugin_id }}/Configuration"
+  register: jellyfin_provision_plugin_cfg
+  changed_when: false
+  no_log: true
+
+- name: Save the merged settings if they differ
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins/{{ jellyfin_provision_plugin_id }}/Configuration"
+    method: POST
+    body_format: json
+    body: "{{ jellyfin_provision_plugin_cfg.json | combine(setting.value, recursive=true) }}"
+    status_code: 204
+  when: (jellyfin_provision_plugin_cfg.json | combine(setting.value, recursive=true)) != jellyfin_provision_plugin_cfg.json
+  no_log: true
+  changed_when: true

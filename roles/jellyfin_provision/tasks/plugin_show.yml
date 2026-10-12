@@ -1,0 +1,19 @@
+---
+- name: Read the settings
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins/{{ plugin.Id }}/Configuration"
+  register: jellyfin_provision_plugin_view
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Print them, hiding anything that looks like a secret
+  ansible.builtin.debug:
+    msg: "{{ plugin.Name }}: {{ masked }}"
+  vars:
+    masked: >-
+      {%- set out = {} -%}
+      {%- for k, v in (jellyfin_provision_plugin_view.json | default({})).items() -%}
+      {%- if k | regex_search('(?i)pass|key|token|secret') -%}{%- set _ = out.update({k: '***'}) -%}{%- else -%}{%- set _ = out.update({k: v}) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}

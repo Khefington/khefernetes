@@ -44,7 +44,7 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 - [Networking: MetalLB and the ingress](docs/networking.md)
 - [Secrets](docs/secrets.md)
 - [Rebuild / restore drill](docs/rebuild.md)
-- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
+- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
 - [Migrating from the old layout](docs/MIGRATION.md)
 - [Ansible variable precedence cheat sheet](docs/ansible-precedence.md)
 - [Dev log](docs/devlog.md)

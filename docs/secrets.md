@@ -8,7 +8,10 @@ The vault password is in `.vault_pass` (git-ignored). Names are listed in `docs/
 | `vault_ansible_become_password` | sudo on hosts that need it |
 | `vault_proxmox_api_token_secret` | Proxmox API token secret |
 | `vault_rke2_token` | RKE2 node join token |
-| `vault_jellyfin_api_key` | Jellyfin backup job and rescans |
+| `vault_jellyfin_khef_password` | Password of the `Khef` Jellyfin admin (set when the account is created; also used to log in) |
+| `vault_opensubtitles_username`, `vault_opensubtitles_password` | OpenSubtitles account used by the Jellyfin plugin |
+
+The Jellyfin API key (backups, rescans) is no longer a vault secret: `make jellyfin-provision` creates it and stores it in the cluster as the Secret `jellyfin-api`.
 
 Commands:
 ```

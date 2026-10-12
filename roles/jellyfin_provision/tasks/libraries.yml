@@ -1,0 +1,24 @@
+---
+# Libraries are matched by the folder they point at, so a restored library with a different name is adopted (and renamed), not duplicated.
+- name: Read the libraries
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders"
+  register: jellyfin_provision_folders
+  changed_when: false
+
+- name: Create or update each library
+  ansible.builtin.include_tasks: library_one.yml
+  loop: "{{ jellyfin_libraries }}"
+  loop_control:
+    loop_var: library
+    label: "{{ library.name }}"
+
+- name: Read the libraries again
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders"
+  register: jellyfin_provision_folders_final
+  changed_when: false
+
+- name: Remember the library names for the summary
+  ansible.builtin.set_fact:
+    jellyfin_provision_library_names: "{{ jellyfin_provision_folders_final.json | map(attribute='Name') | sort | list }}"

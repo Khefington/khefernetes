@@ -1,0 +1,4 @@
+---
+# Second worker: room for the next apps (download client, request manager, ...).
+vm_cores: 4
+vm_memory_mb: 6144

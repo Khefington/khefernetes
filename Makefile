@@ -6,7 +6,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
-        proxmox-template vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-backup backup-now \
+        proxmox-template vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -55,6 +55,8 @@ k8s-storage: ## Namespace, NFS volumes and the local-path provisioner
 	$(PLAYBOOK) playbooks/storage/kubernetes.yml
 jellyfin: ## Deploy Jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin.yml
+jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
+	$(PLAYBOOK) playbooks/apps/jellyfin_provision.yml
 jellyfin-backup: ## Install the nightly Jellyfin backup job
 	$(PLAYBOOK) playbooks/apps/jellyfin_backup.yml
 backup-now: ## Run one Jellyfin backup immediately (test)

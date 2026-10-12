@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: jellyfin_provision
+  author: khefernetes
+  description: "Configure a running Jellyfin through its API: first-run wizard, admin, plugins, settings, libraries, users, backup API key"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

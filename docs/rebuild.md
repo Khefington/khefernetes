@@ -34,17 +34,21 @@ The playbook removes the old SSH host keys from your PC too, so the new VMs will
 | 5 | `make networking` | `The ingress answers on http://192.168.1.200` |
 | 6 | `make k8s-storage` | all 3 media claims `Bound` |
 | 7 | `make jellyfin` | pod ready, then the health check through the ingress answers |
+| 8 | `make jellyfin-provision` | the first-run wizard done, plugins installed, the four libraries and the `Khef` user present, the backup key stored |
 
 After step 3, on kasrkin, check the ingress is Traefik: `kubectl -n kube-system get pods | grep -i -E 'traefik|ingress-nginx'` should list a traefik pod on each node and no ingress-nginx.
 After step 5: `kubectl get svc -A | grep LoadBalancer` should show `rke2-traefik` with EXTERNAL-IP `192.168.1.200`.
 
-## 4. Restore Jellyfin
-1. Open `http://192.168.1.200` (or `http://jellyfin.home.lan`) and complete the first-run wizard with any user.
-2. Dashboard > Backups: the nightly zips from the HDD are already listed here (the backup folder on castellan is mounted into the Jellyfin pod). Pick the newest one and click Restore. Jellyfin restarts and is unavailable for a minute or two. Your users, libraries and watch history return. Nothing needs to be copied anywhere.
-3. Create a new API key (Dashboard > Advanced > API Keys, name it `backup`). The old key does not exist any more. Put the new one in the vault as `vault_jellyfin_api_key`, then `make jellyfin-backup`.
-4. `make etcd-backup-now` again. The new cluster has the new token, so take a fresh snapshot with it.
-5. Dashboard > Scan All Libraries. Jellyfin adopts the trickplay folders already on the SSD instead of regenerating them.
-6. `make diagnose-jellyfin` should show all PASS.
+## 4. Jellyfin: set up, then restore the data
+Step 3.8 already did everything that comes from Git: the wizard, the `Khef` admin, the libraries, plugins, settings and the backup API key.
+What is left is the data only a backup holds: watch history and each user's preferences.
+1. Dashboard > Backups: the nightly zips from the HDD are already listed (that folder on castellan is mounted into the Jellyfin pod). Pick the newest and click Restore. Jellyfin restarts and is unavailable for a minute or two.
+2. Run `make jellyfin-provision` again. The restore brought back the old database, so this re-syncs the backup key and re-applies the settings from Git. Log in with the password that was in the old database; it must match `vault_jellyfin_khef_password`.
+3. `make backup-now`, then `make etcd-backup-now` (the new cluster has a new token, so take a fresh snapshot with it).
+4. Dashboard > Scheduled Tasks: let "Extract Chapter Images" and "Generate Trickplay Images" run overnight; the trickplay, artwork and chapter images already on the SSD are adopted, not rebuilt.
+5. `make diagnose-jellyfin` should show all PASS.
+
+If you do **not** need the old watch history, skip step 1 and 2: the provisioned server is already complete.
 
 ## 5. Verify against your baseline
 - `make audit-media` is clean (the library never moved).

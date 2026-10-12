@@ -1,0 +1,7 @@
+---
+# Wyvern runs Jellyfin (its config volume is node-local, so Jellyfin always lands on the node that
+# first created it). Give it most of the machine: scans, ffprobe, trickplay and transcoding all run here.
+# vCPUs are ceilings, not reservations: all three VMs share castellan's 24 hardware threads, so
+# an idle VM costs nothing and wyvern can use whatever the others are not using.
+vm_cores: 12
+vm_memory_mb: 16384

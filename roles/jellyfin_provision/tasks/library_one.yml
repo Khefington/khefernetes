@@ -1,0 +1,62 @@
+---
+- name: Find the library that points at this folder
+  ansible.builtin.set_fact:
+    jellyfin_provision_existing: >-
+      {{ (jellyfin_provision_folders.json | selectattr('Locations', 'contains', library.path) | list | first) | default({}) }}
+
+- name: Create the library
+  ansible.builtin.uri:
+    url: >-
+      {{ jellyfin_provision_url }}/Library/VirtualFolders?name={{ library.name | urlencode }}&collectionType={{ library.type }}&paths={{ library.path | urlencode }}&refreshLibrary=false
+    method: POST
+    body_format: json
+    body:
+      LibraryOptions: "{{ jellyfin_library_options | combine(library.options | default({}), recursive=true) }}"
+    status_code: 204
+  when: jellyfin_provision_existing | length == 0
+  changed_when: true
+
+- name: Read the libraries (to get the new one's id and current options)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders"
+  register: jellyfin_provision_folders_now
+  changed_when: false
+
+- name: Pick this library
+  ansible.builtin.set_fact:
+    jellyfin_provision_this: >-
+      {{ (jellyfin_provision_folders_now.json | selectattr('Locations', 'contains', library.path) | list | first) | default({}) }}
+
+- name: Stop if it still does not exist
+  ansible.builtin.assert:
+    that: jellyfin_provision_this | length > 0
+    fail_msg: "Library '{{ library.name }}' ({{ library.path }}) was not created. Does the folder exist inside the pod?"
+
+- name: Warn when the type differs (Jellyfin cannot change a library's type)
+  ansible.builtin.debug:
+    msg: "Library '{{ jellyfin_provision_this.Name }}' is of type {{ jellyfin_provision_this.CollectionType | default('mixed') }}, wanted {{ library.type }}. Remove it in Jellyfin and run this again to recreate it."
+  when: (jellyfin_provision_this.CollectionType | default('')) != library.type
+
+- name: Rename it if the name differs
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders/Name?name={{ jellyfin_provision_this.Name | urlencode }}&newName={{ library.name | urlencode }}"
+    method: POST
+    status_code: 204
+  when: jellyfin_provision_this.Name != library.name
+  changed_when: true
+
+- name: Work out the options it should have
+  ansible.builtin.set_fact:
+    jellyfin_provision_options_new: "{{ jellyfin_provision_this.LibraryOptions | combine(jellyfin_library_options, library.options | default({}), recursive=true) }}"
+
+- name: Apply the options if they differ
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders/LibraryOptions"
+    method: POST
+    body_format: json
+    body:
+      Id: "{{ jellyfin_provision_this.ItemId }}"
+      LibraryOptions: "{{ jellyfin_provision_options_new }}"
+    status_code: 204
+  when: jellyfin_provision_options_new != jellyfin_provision_this.LibraryOptions
+  changed_when: true

@@ -1,0 +1,29 @@
+---
+- name: Read the libraries (users get access by library)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Library/VirtualFolders"
+  register: jellyfin_provision_folders_for_users
+  changed_when: false
+
+- name: Read the users
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Users"
+  register: jellyfin_provision_users
+  changed_when: false
+
+- name: Create and configure each user
+  ansible.builtin.include_tasks: user_one.yml
+  loop: "{{ jellyfin_users }}"
+  loop_control:
+    loop_var: user
+    label: "{{ user.name }}"
+
+- name: Read the users again
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Users"
+  register: jellyfin_provision_users_final
+  changed_when: false
+
+- name: Remember the user names for the summary
+  ansible.builtin.set_fact:
+    jellyfin_provision_user_names: "{{ jellyfin_provision_users_final.json | map(attribute='Name') | sort | list }}"

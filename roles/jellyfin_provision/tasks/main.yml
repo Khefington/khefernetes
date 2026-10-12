@@ -1,0 +1,77 @@
+---
+# Configure Jellyfin through its API, in the order a person would click through it.
+# Every step first looks at what exists and only changes what is different, so it is safe to re-run.
+# The calls run on the machine running Ansible (they go through the ingress, like a browser);
+# only the Kubernetes Secret for the backup job is written on the control plane.
+- name: Talk to Jellyfin's API
+  delegate_to: localhost
+  become: false
+  module_defaults:
+    ansible.builtin.uri:
+      headers:
+        Host: "{{ jellyfin_provision_host }}"
+        Authorization: "{{ jellyfin_provision_auth_header }}"
+      timeout: 120
+      return_content: true
+      use_proxy: false
+  block:
+    - name: Wait until Jellyfin answers
+      ansible.builtin.include_tasks: wait.yml
+
+    - name: First-run wizard (only if it was never completed)
+      ansible.builtin.include_tasks: wizard.yml
+
+    - name: Log in as the admin
+      ansible.builtin.include_tasks: auth.yml
+
+    - name: Plugin repositories and plugins
+      ansible.builtin.include_tasks: plugins.yml
+
+    - name: Server settings
+      ansible.builtin.include_tasks: server_config.yml
+
+    - name: Plugin settings
+      ansible.builtin.include_tasks: plugin_settings.yml
+
+    - name: Libraries
+      ansible.builtin.include_tasks: libraries.yml
+
+    - name: Users
+      ansible.builtin.include_tasks: users.yml
+
+    - name: The API key used by the backup job
+      ansible.builtin.include_tasks: api_key.yml
+
+    - name: Start a library scan
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Library/Refresh"
+        method: POST
+        status_code: 204
+      when: jellyfin_provision_scan_after | bool
+      changed_when: true
+
+- name: Store the backup API key as a Kubernetes Secret
+  ansible.builtin.command:
+    cmd: "{{ kubectl_cmd }} apply -f -"
+    stdin: |
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: jellyfin-api
+        namespace: {{ media_namespace }}
+      type: Opaque
+      stringData:
+        api-key: "{{ jellyfin_provision_backup_key }}"
+  register: jellyfin_provision_secret
+  changed_when: "'unchanged' not in jellyfin_provision_secret.stdout"
+  no_log: true
+  when: jellyfin_provision_create_secret | bool
+
+- name: Summary
+  ansible.builtin.debug:
+    msg:
+      - "Wizard completed by this run: {{ jellyfin_provision_wizard_ran | default(false) }}"
+      - "Plugins installed by this run: {{ jellyfin_provision_installed_now | default([]) }}"
+      - "Plugins now present (pin these versions in group_vars/all/jellyfin.yml): {{ jellyfin_provision_plugins_final | default([]) }}"
+      - "Libraries: {{ jellyfin_provision_library_names | default([]) }}"
+      - "Users: {{ jellyfin_provision_user_names | default([]) }}"

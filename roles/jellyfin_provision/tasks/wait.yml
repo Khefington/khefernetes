@@ -1,0 +1,19 @@
+---
+- name: Wait for Jellyfin to answer (first start and restarts take a minute)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/System/Info/Public"
+  register: jellyfin_provision_public
+  until: jellyfin_provision_public.status is defined and jellyfin_provision_public.status == 200
+  retries: "{{ jellyfin_provision_retries }}"
+  delay: 5
+  failed_when: false
+  changed_when: false
+
+- name: Stop if it never came up
+  ansible.builtin.assert:
+    that:
+      - jellyfin_provision_public.status is defined
+      - jellyfin_provision_public.status == 200
+    fail_msg: >-
+      Jellyfin did not answer at {{ jellyfin_provision_url }} (Host: {{ jellyfin_provision_host }}).
+      Check the pod (kubectl -n media get pods) and the ingress (kubectl get ingress -A).

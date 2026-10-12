@@ -1,0 +1,5 @@
+---
+# Not meant to be overridden. Jellyfin wants this header on every request; the Token part is added
+# once we have logged in (jellyfin_provision_token).
+jellyfin_provision_auth_header: >-
+  MediaBrowser Client="khefernetes", Device="ansible", DeviceId="khefernetes-provision", Version="1.0"{% if jellyfin_provision_token is defined %}, Token="{{ jellyfin_provision_token }}"{% endif %}

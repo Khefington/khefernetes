@@ -33,3 +33,10 @@ High Level Steps / phases
 ### 10/9/2026 - restructure
 - Moved to a `production` inventory, roles for every concern, thin playbooks, `site.yml`, docs and lint tooling.
 - Added books as a library, a media audit (completeness proof), a flatten repair, and Jellyfin diagnostics.
+
+### 10/11/2026 - rebuild drill findings
+- Jellyfin crashed on a fresh config volume: the trickplay mount inside /config made the runtime create /config/data as root. An init container now creates it and hands it to the media user.
+- Backup folder on the HDD is mounted into the pod, so the Dashboard's Backups page lists the nightly zips and writes new ones straight to the HDD.
+- Restore left artwork blank: the metadata folder is not in a Jellyfin backup. Metadata, subtitles and attachments now persist on the SSD with trickplay (`jellyfin_persisted_dirs`).
+- VM sizes set per host (wyvern 12 vCPU / 16 GB for Jellyfin); Jellyfin limit raised to 10 GiB.
+- Added `jellyfin_provision`: wizard, plugins (Open Subtitles, Intro Skipper), settings, libraries, users and the backup API key from Git.

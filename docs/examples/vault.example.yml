@@ -5,4 +5,6 @@
 vault_ansible_become_password: "changeme"
 vault_proxmox_api_token_secret: "changeme"
 vault_rke2_token: "changeme-long-random-string"
-vault_jellyfin_api_key: "changeme"
+vault_jellyfin_khef_password: "changeme"
+vault_opensubtitles_username: "changeme"
+vault_opensubtitles_password: "changeme"

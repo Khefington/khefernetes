@@ -1,0 +1,56 @@
+---
+# The wizard's own API calls. They only work while the wizard is incomplete; afterwards Jellyfin refuses them.
+- name: Run the first-run wizard
+  when: not (jellyfin_provision_public.json.StartupWizardCompleted | default(false))
+  block:
+    - name: Server name, language and region
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Startup/Configuration"
+        method: POST
+        body_format: json
+        body:
+          ServerName: "{{ jellyfin_provision_server_name }}"
+          UICulture: "{{ jellyfin_provision_ui_culture }}"
+          MetadataCountryCode: "{{ jellyfin_provision_country }}"
+          PreferredMetadataLanguage: "{{ jellyfin_provision_language }}"
+        status_code: 204
+      changed_when: true
+
+    - name: Ask for the first user (this makes Jellyfin create the placeholder account)
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Startup/User"
+      changed_when: false
+
+    - name: Name the admin and set the password
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Startup/User"
+        method: POST
+        body_format: json
+        body:
+          Name: "{{ jellyfin_provision_admin_name }}"
+          Password: "{{ jellyfin_provision_admin_password }}"
+        status_code: 204
+      no_log: true
+      changed_when: true
+
+    - name: Remote access setting
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Startup/RemoteAccess"
+        method: POST
+        body_format: json
+        body:
+          EnableRemoteAccess: "{{ jellyfin_provision_remote_access | bool }}"
+          EnableAutomaticPortMapping: false
+        status_code: 204
+      changed_when: true
+
+    - name: Finish the wizard
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Startup/Complete"
+        method: POST
+        status_code: 204
+      changed_when: true
+
+    - name: Remember that this run did it
+      ansible.builtin.set_fact:
+        jellyfin_provision_wizard_ran: true

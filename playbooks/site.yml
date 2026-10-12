@@ -22,5 +22,7 @@
   ansible.builtin.import_playbook: storage/kubernetes.yml
 - name: Deploy Jellyfin
   ansible.builtin.import_playbook: apps/jellyfin.yml
+- name: Configure Jellyfin (wizard, plugins, libraries, users, backup key)
+  ansible.builtin.import_playbook: apps/jellyfin_provision.yml
 - name: Install the Jellyfin backup job
   ansible.builtin.import_playbook: apps/jellyfin_backup.yml

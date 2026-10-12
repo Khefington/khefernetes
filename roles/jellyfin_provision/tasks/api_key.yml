@@ -1,0 +1,33 @@
+---
+# The nightly backup job needs an API key. Create one here (once) and hand it to the cluster as a Secret,
+# so nobody has to click it together and paste it into the vault.
+- name: Read the existing API keys
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Auth/Keys"
+  register: jellyfin_provision_keys
+  changed_when: false
+  no_log: true
+
+- name: Create the key if it does not exist
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Auth/Keys?app={{ jellyfin_provision_backup_key_app | urlencode }}"
+    method: POST
+    status_code: 204
+  when: >-
+    jellyfin_provision_keys.json.Items | selectattr('AppName', 'equalto', jellyfin_provision_backup_key_app) | list | length == 0
+  register: jellyfin_provision_key_created
+  no_log: true
+  changed_when: true
+
+- name: Read the keys again
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Auth/Keys"
+  register: jellyfin_provision_keys_now
+  changed_when: false
+  no_log: true
+
+- name: Keep the key for the Secret
+  ansible.builtin.set_fact:
+    jellyfin_provision_backup_key: >-
+      {{ (jellyfin_provision_keys_now.json.Items | selectattr('AppName', 'equalto', jellyfin_provision_backup_key_app) | list | first).AccessToken }}
+  no_log: true

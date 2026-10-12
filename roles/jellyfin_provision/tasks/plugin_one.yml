@@ -1,0 +1,62 @@
+---
+# Install one plugin from the repositories, unless it is already installed (at the pinned version, if one is pinned).
+- name: Look the plugin up in the repositories
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Packages"
+  register: jellyfin_provision_packages
+  until: >-
+    jellyfin_provision_packages.json | default([])
+    | selectattr('name', 'equalto', plugin.name) | list | length > 0
+  retries: 6
+  delay: 10
+  failed_when: false
+  changed_when: false
+
+- name: Pick the package entry
+  ansible.builtin.set_fact:
+    jellyfin_provision_pkg: "{{ jellyfin_provision_packages.json | default([]) | selectattr('name', 'equalto', plugin.name) | list | first | default({}) }}"
+
+- name: Stop with a helpful message if the plugin is not offered
+  ansible.builtin.assert:
+    that: jellyfin_provision_pkg | length > 0
+    fail_msg: >-
+      '{{ plugin.name }}' is not offered by any registered repository. Names on offer:
+      {{ jellyfin_provision_packages.json | default([]) | map(attribute='name') | sort | list }}.
+      Check the name (and that its repository is in jellyfin_plugin_repositories).
+
+- name: Is it already installed (and at the pinned version, if pinned)?
+  ansible.builtin.set_fact:
+    jellyfin_provision_plugin_present: >-
+      {{ jellyfin_provision_plugins.json
+         | selectattr('Name', 'equalto', plugin.name)
+         | selectattr('Version', 'match', (plugin.version | default('')) | regex_escape ~ '.*')
+         | list | length > 0 }}
+
+- name: Install it
+  ansible.builtin.uri:
+    url: >-
+      {{ jellyfin_provision_url }}/Packages/Installed/{{ plugin.name | urlencode }}?assemblyGuid={{ jellyfin_provision_pkg.guid }}
+      {{- ('&version=' ~ plugin.version) if (plugin.version | default('') | length > 0) else '' }}
+      {{- ('&repositoryUrl=' ~ (jellyfin_provision_pkg.versions[0].repositoryUrl | urlencode)) if (jellyfin_provision_pkg.versions[0].repositoryUrl | default('') | length > 0) else '' }}
+    method: POST
+    status_code: 204
+  when: not (jellyfin_provision_plugin_present | bool)
+  register: jellyfin_provision_plugin_install
+  changed_when: true
+
+- name: Wait until Jellyfin lists it as installed
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins"
+  register: jellyfin_provision_plugin_wait
+  until: >-
+    jellyfin_provision_plugin_wait.json | default([])
+    | selectattr('Name', 'equalto', plugin.name) | list | length > 0
+  retries: 30
+  delay: 5
+  changed_when: false
+  when: not (jellyfin_provision_plugin_present | bool)
+
+- name: Note that it was installed
+  ansible.builtin.set_fact:
+    jellyfin_provision_installed_now: "{{ jellyfin_provision_installed_now | default([]) + [plugin.name] }}"
+  when: not (jellyfin_provision_plugin_present | bool)

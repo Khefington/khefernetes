@@ -3,9 +3,9 @@ jellyfin_hostname: "jellyfin.{{ lan_domain }}"
 jellyfin_ingress_class: "{{ ingress_class_name }}"
 jellyfin_config_size: 20Gi # users, watch history, metadata, trickplay images
 jellyfin_cache_limit: 20Gi # transcoding scratch space (/cache) on the node's disk
-jellyfin_tmp_limit: 2Gi # /tmp: ffmpeg frames and trickplay tiles are built here before being moved to /config
-jellyfin_cpu_request: 500m
-jellyfin_memory_request: 1Gi
-jellyfin_memory_limit: 3Gi # no CPU limit: software transcoding should use what is free
+jellyfin_tmp_limit: 4Gi # /tmp: ffmpeg frames and trickplay tiles are built here before being moved to /config
+jellyfin_cpu_request: 2000m # reserved on the node; Jellyfin may burst above it (no CPU limit)
+jellyfin_memory_request: 2Gi
+jellyfin_memory_limit: 10Gi # wyvern has 16 GiB; leave room for the OS, RKE2 and other pods
 jellyfin_rollout_timeout: 600s
 jellyfin_manifest_path: "{{ k8s_app_manifest_dir }}/jellyfin.yaml"

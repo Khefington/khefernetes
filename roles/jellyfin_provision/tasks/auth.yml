@@ -1,0 +1,26 @@
+---
+- name: Log in
+  block:
+    - name: Authenticate as the admin
+      ansible.builtin.uri:
+        url: "{{ jellyfin_provision_url }}/Users/AuthenticateByName"
+        method: POST
+        body_format: json
+        body:
+          Username: "{{ jellyfin_provision_admin_name }}"
+          Pw: "{{ jellyfin_provision_admin_password }}"
+      register: jellyfin_provision_login
+      changed_when: false
+      no_log: true
+
+    - name: Keep the session token for the next calls
+      ansible.builtin.set_fact:
+        jellyfin_provision_token: "{{ jellyfin_provision_login.json.AccessToken }}"
+      no_log: true
+  rescue:
+    - name: Explain the login failure
+      ansible.builtin.fail:
+        msg: >-
+          Could not log in as '{{ jellyfin_provision_admin_name }}'. If this server was restored from a backup, the
+          password in the database is the one from the old server: put that password in the vault as
+          vault_jellyfin_khef_password (or reset it in Jellyfin), then run this again.

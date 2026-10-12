@@ -13,6 +13,16 @@ media_libraries:
 # Mounted at /config/data/trickplay, so they survive a cluster rebuild and Jellyfin re-adopts them.
 jellyfin_trickplay_subpath: jellyfin/trickplay
 
+# Folders inside Jellyfin's /config/data that are expensive to regenerate and are kept on the SSD,
+# so a rebuilt cluster finds them again. Each entry: where Jellyfin sees it, and the folder on the SSD
+# (relative to <staging>/appdata). The SQLite database is NOT in this list on purpose: it needs a local disk.
+# Add an entry here, run `make nfs` (creates the folder) then `make jellyfin` (mounts it).
+jellyfin_persisted_dirs:
+  - {mount: /config/data/trickplay, subpath: "{{ jellyfin_trickplay_subpath }}"} # scrub-bar thumbnails
+  - {mount: /config/metadata, subpath: jellyfin/metadata} # posters, backdrops, actor photos, chapter images, profile pictures
+  - {mount: /config/data/subtitles, subpath: jellyfin/subtitles} # subtitles Jellyfin extracts from video files
+  - {mount: /config/data/attachments, subpath: jellyfin/attachments} # fonts and other attachments extracted from video files
+
 # The 'media' user and group own every file. Containers run as this uid/gid, and the NFS export
 # squashes every client to it, so ownership is identical from every node.
 media_uid: 1500
