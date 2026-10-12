@@ -1,0 +1,3 @@
+---
+# The VM that would receive the GPU (its current hardware is shown in the report).
+gpu_discover_vm_id: "{{ hostvars['wyvern'].vm_id }}"

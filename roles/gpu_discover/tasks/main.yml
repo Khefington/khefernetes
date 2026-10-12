@@ -1,0 +1,51 @@
+---
+# READ-ONLY. Changes nothing on castellan. Prints what is needed to plan the iGPU passthrough safely.
+- name: Collect the facts
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      section() { printf '\n== %s\n' "$1"; }
+      section "Machine"
+      lscpu 2>/dev/null | grep -E 'Model name|^CPU\(s\)' || true
+      printf 'Kernel: %s\n' "$(uname -r)"
+      pveversion 2>/dev/null || true
+      if [ -d /sys/firmware/efi ]; then echo "Boot mode: UEFI"; else echo "Boot mode: legacy BIOS"; fi
+      section "How the host boots (decides where kernel options go)"
+      proxmox-boot-tool status 2>&1 | head -8 || true
+      echo "Kernel command line now: $(cat /proc/cmdline)"
+      [ -f /etc/kernel/cmdline ] && echo "/etc/kernel/cmdline: $(cat /etc/kernel/cmdline)" || echo "/etc/kernel/cmdline: absent"
+      grep -E '^GRUB_CMDLINE_LINUX' /etc/default/grub 2>/dev/null || echo "/etc/default/grub: no GRUB_CMDLINE_LINUX line"
+      df -T / 2>/dev/null | tail -1 | awk '{print "Root filesystem: " $2}'
+      section "IOMMU (VT-d must be on in the BIOS and on the kernel command line)"
+      dmesg 2>/dev/null | grep -i -E 'DMAR|IOMMU' | head -12 || true
+      echo "IOMMU groups found: $(ls /sys/kernel/iommu_groups 2>/dev/null | wc -l)"
+      section "Graphics devices"
+      lspci -nnk 2>/dev/null | grep -A4 -i -E 'VGA compatible|Display controller|3D controller' || echo "(no graphics devices listed, or lspci missing)"
+      section "The iGPU's IOMMU group (everything in it moves with it)"
+      igpu=$(lspci -D 2>/dev/null | grep -i -E 'VGA compatible|Display controller' | grep -i intel | head -1 | cut -d' ' -f1)
+      if [ -n "$igpu" ] && [ -e "/sys/bus/pci/devices/$igpu/iommu_group" ]; then
+        echo "iGPU at $igpu, group $(basename "$(readlink -f /sys/bus/pci/devices/$igpu/iommu_group)")"
+        for d in /sys/bus/pci/devices/$igpu/iommu_group/devices/*; do lspci -nns "$(basename "$d")"; done
+      else
+        echo "iGPU: not found, or the IOMMU is off (no group to show)"
+      fi
+      section "Is a monitor using the iGPU? (connected = the host console would go dark)"
+      for s in /sys/class/drm/card*-*/status; do [ -e "$s" ] && echo "$s: $(cat "$s")"; done 2>/dev/null
+      cat /sys/class/graphics/fb0/name 2>/dev/null | sed 's/^/Framebuffer: /' || true
+      section "Kernel modules"
+      lsmod | grep -E '^(vfio|i915|xe|kvm_intel|snd_hda_intel)' || echo "(none of vfio/i915/xe/kvm_intel loaded)"
+      modinfo vfio-pci 2>/dev/null | grep -m1 filename || echo "vfio-pci module: NOT available"
+      grep -r -i -E 'vfio|i915|blacklist|softdep' /etc/modprobe.d /etc/modules /etc/modules-load.d 2>/dev/null || echo "No existing vfio/i915 module settings."
+      section "Existing passthrough or the VM's hardware"
+      qm config {{ gpu_discover_vm_id }} 2>/dev/null | grep -E '^(name|machine|bios|cpu|cores|memory|balloon|hostpci|efidisk|scsihw|agent)' || echo "(could not read VM {{ gpu_discover_vm_id }})"
+      section "Memory the host would keep"
+      free -m | awk 'NR==1 || NR==2'
+      echo "VM memory asked for, MB: $(for v in $(qm list 2>/dev/null | awk 'NR>1 {print $1}'); do qm config "$v" 2>/dev/null | awk -F': ' '/^memory:/ {print $2}'; done | awk '{s += $1} END {print s + 0}')"
+  register: gpu_discover_report
+  changed_when: false
+  check_mode: false
+
+- name: The report (paste all of it back)
+  ansible.builtin.debug:
+    var: gpu_discover_report.stdout_lines

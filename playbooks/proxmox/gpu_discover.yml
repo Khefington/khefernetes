@@ -1,0 +1,9 @@
+---
+# READ-ONLY report on whether castellan is ready to pass the Intel iGPU through to a VM. Changes nothing.
+#   ansible-playbook playbooks/proxmox/gpu_discover.yml
+# Read docs/runbooks/gpu-passthrough.md before taking any further step.
+- name: Look at the Proxmox host's GPU and IOMMU setup
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - gpu_discover
