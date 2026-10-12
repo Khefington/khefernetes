@@ -87,6 +87,22 @@ def check_namespaces(k):
             emit("WARN", "namespace", "%s: no network policies, so every pod in the cluster can reach every pod here (Canal can enforce them)" % name)
 
 
+# Components that legitimately need more than an ordinary app: (namespace, pod name prefix) -> why.
+ACCEPTED = {
+    ("metallb-system", "speaker"): "announces the ingress address on the LAN, so it needs host networking and raw sockets",
+    ("metallb-system", "controller"): "MetalLB's controller (upstream manifest; no limits or seccomp profile set)",
+    ("intel-gpu-plugin", "intel-gpu-plugin"): "the GPU device plugin must see /dev/dri, /sys/class/drm and the kubelet device-plugin socket",
+    ("local-path-storage", "local-path-provisioner"): "creates the node-local volumes (Jellyfin's database lives on one)",
+}
+
+
+def accepted_reason(ns, name):
+    for (ans, prefix), why in ACCEPTED.items():
+        if ns == ans and name.startswith(prefix):
+            return why
+    return None
+
+
 def containers_of(pod):
     spec = pod["spec"]
     return (spec.get("initContainers") or []) + (spec.get("containers") or [])
@@ -129,6 +145,8 @@ def check_pods(k):
                 findings.append("%s: no seccomp profile" % cname)
         if is_system(ns):
             sys_findings[ns] = sys_findings.get(ns, 0) + len(findings)
+        elif findings and accepted_reason(ns, name):
+            emit("INFO", "pod", "%s/%s accepted (%s): %s" % (ns, name, accepted_reason(ns, name), "; ".join(findings)))
         elif findings:
             emit("WARN", "pod", "%s/%s: %s" % (ns, name, "; ".join(findings)))
         else:
@@ -158,6 +176,9 @@ def check_exposure(k):
     for i in k.items("ingresses", "-A") or []:
         ns, name = i["metadata"]["namespace"], i["metadata"]["name"]
         hosts = [r.get("host", "*") for r in i["spec"].get("rules") or []]
+        if "*" in hosts:
+            emit("INFO", "ingress", "%s/%s also answers requests with ANY host name (for example http://<ingress IP>): remove that rule once DNS works everywhere" % (ns, name))
+            hosts = [h for h in hosts if h != "*"]
         if i["spec"].get("tls"):
             emit("OK", "ingress", "%s/%s (%s) serves HTTPS" % (ns, name, ", ".join(hosts)))
         else:
@@ -169,7 +190,7 @@ def check_rbac(k):
         if b["roleRef"]["name"] != "cluster-admin":
             continue
         subs = b.get("subjects") or []
-        custom = [s for s in subs if not s.get("name", "").startswith("system:")]
+        custom = [s for s in subs if not s.get("name", "").startswith(("system:", "helm-"))]
         if custom:
             emit("WARN", "rbac", "ClusterRoleBinding %s gives cluster-admin to %s" % (b["metadata"]["name"], ", ".join("%s %s" % (s["kind"], s["name"]) for s in custom)))
         else:

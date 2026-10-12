@@ -8,6 +8,8 @@ lan_dns_servers:
   - 192.168.1.1
   - 8.8.8.8
 lan_domain: home.lan
+# The whole LAN as a network address (used by the host firewall: who may reach SSH, the Proxmox web UI and DNS).
+lan_subnet_cidr: 192.168.1.0/24
 # Reserved for MetalLB. Must be OUTSIDE the router's DHCP pool.
 metallb_range: 192.168.1.200-192.168.1.220
 # The one LAN address the ingress answers on. Must be inside metallb_range.

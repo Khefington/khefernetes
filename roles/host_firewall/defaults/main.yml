@@ -1,0 +1,23 @@
+---
+# Host firewall: one nftables table (inet khef_filter) with ONE chain, `input`: what may talk TO this machine.
+# It does not touch forwarded traffic, so pods, the ingress address and VM networking are unaffected. Kubernetes' own
+# iptables rules sit beside it. Remove it at any time with `systemctl stop khef-firewall` (or `make host-firewall-off`).
+host_firewall_apply: false # false = only render, check and show the rules; true = apply (with an automatic rollback)
+host_firewall_dir: /etc/khefernetes
+host_firewall_rules_path: "{{ host_firewall_dir }}/firewall.nft"
+host_firewall_table: khef_filter
+host_firewall_rollback_seconds: 180 # if the connection check does not succeed within this time, the rules remove themselves
+
+# Who may reach SSH (everywhere) and the Proxmox web UI / console (castellan). Default: the whole LAN.
+# Tighten to your PC's address once it has a fixed one:  host_firewall_admin_cidrs: [192.168.1.20/32]
+host_firewall_admin_cidrs: ["{{ lan_subnet_cidr }}"]
+host_firewall_dns_cidrs: ["{{ lan_subnet_cidr }}"] # who may use castellan's DNS server (the whole LAN once the router points at it)
+
+# Cluster traffic: everything from the nodes themselves, and from the pod and service networks (RKE2 defaults).
+host_firewall_node_ips: "{{ groups['anvil_cluster'] | map('extract', hostvars, 'ansible_host') | list }}"
+host_firewall_pod_cidr: 10.42.0.0/16
+host_firewall_service_cidr: 10.43.0.0/16
+host_firewall_k8s_api_from_admin: false # true = let your PC (admin cidrs) use kubectl against :6443
+
+# Extra TCP ports to open to the admin addresses only.
+host_firewall_extra_admin_tcp_ports: []

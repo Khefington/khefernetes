@@ -1,0 +1,16 @@
+# Managed by Ansible (khefernetes, role host_firewall).
+[Unit]
+Description=khefernetes host firewall (nftables table {{ host_firewall_table }})
+Documentation=file:{{ host_firewall_rules_path }}
+Wants=network-pre.target
+Before=network-pre.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f {{ host_firewall_rules_path }}
+ExecStop=-/usr/sbin/nft delete table inet {{ host_firewall_table }}
+
+[Install]
+WantedBy=multi-user.target

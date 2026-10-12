@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -80,6 +80,12 @@ jellyfin-profile-check: ## READ-ONLY: are users' profile pictures linked? (shows
 	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml
 jellyfin-profile-fix: ## Re-attach profile pictures that are on disk but no longer linked to their user
 	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml -e jellyfin_user_images_apply=true
+host-firewall: ## Hardening: show the host firewall rules for castellan + VMs and have nft check them (changes nothing)
+	$(PLAYBOOK) playbooks/hardening/hosts.yml
+host-firewall-apply: ## Hardening: apply the host firewall + castellan's automatic security updates (automatic rollback if contact is lost)
+	$(PLAYBOOK) playbooks/hardening/hosts.yml -e host_firewall_apply=true
+host-firewall-off: ## Emergency: stop the host firewall on castellan and every VM
+	ansible proxmox:anvil_cluster -b -m ansible.builtin.systemd -a "name=khef-firewall state=stopped enabled=false"
 security-audit: ## READ-ONLY: security findings for castellan, the VMs, the cluster and Jellyfin's settings
 	$(PLAYBOOK) playbooks/operations/security_audit.yml
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key

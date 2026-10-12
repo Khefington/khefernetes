@@ -1,0 +1,45 @@
+# Managed by Ansible (khefernetes, role host_firewall). Manual edits will be overwritten.
+# Only the INPUT path is filtered: traffic addressed to this machine. Forwarded traffic (pods, VMs, the ingress address) is not touched.
+# Emergency off: systemctl stop khef-firewall     See what is being refused: journalctl -k | grep khef-fw
+{% set admin = host_firewall_admin_cidrs | join(', ') %}
+{% set nodes = host_firewall_node_ips | join(', ') %}
+{% set is_pve = inventory_hostname in groups['proxmox'] %}
+table inet {{ host_firewall_table }}
+delete table inet {{ host_firewall_table }}
+
+table inet {{ host_firewall_table }} {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state invalid drop
+    ct state established,related accept
+    iif "lo" accept
+
+    # Basics every network needs: ping, IPv6 neighbour discovery, and DHCP / DHCPv6 answers.
+    ip protocol icmp accept
+    ip6 nexthdr icmpv6 accept
+    udp sport 67 udp dport 68 accept
+    udp sport 547 udp dport 546 accept
+
+{% if not is_pve %}
+    # The cluster: other nodes may reach anything here; so may pods and services (kubelet, DNS, API).
+    ip saddr { {{ nodes }}, {{ host_firewall_pod_cidr }}, {{ host_firewall_service_cidr }} } accept
+{% endif %}
+    # Administration.
+    ip saddr { {{ admin }} } tcp dport 22 accept
+{% if is_pve %}
+    ip saddr { {{ admin }} } tcp dport { 8006, 3128 } accept   # Proxmox web UI / API, SPICE proxy
+    ip saddr { {{ nodes }} } tcp dport 2049 accept             # NFS (version 4 only: this single port) for the cluster VMs
+    ip saddr { {{ host_firewall_dns_cidrs | join(', ') }} } meta l4proto { tcp, udp } th dport 53 accept   # DNS server (make dns)
+{% elif host_firewall_k8s_api_from_admin and inventory_hostname in groups['anvil_control_planes'] %}
+    ip saddr { {{ admin }} } tcp dport 6443 accept             # kubectl from your PC
+{% endif %}
+{% if host_firewall_extra_admin_tcp_ports | length > 0 %}
+    ip saddr { {{ admin }} } tcp dport { {{ host_firewall_extra_admin_tcp_ports | join(', ') }} } accept
+{% endif %}
+
+    # Everything else is refused. A few lines of it are logged, so you can see what was blocked.
+    limit rate 6/minute log prefix "khef-fw: " level info
+    counter drop
+  }
+}

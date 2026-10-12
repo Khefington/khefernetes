@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: host_updates
+  author: khefernetes
+  description: "Automatic security updates for the Proxmox host (unattended-upgrades)"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

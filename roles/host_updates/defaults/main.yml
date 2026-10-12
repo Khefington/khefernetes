@@ -1,0 +1,4 @@
+---
+host_updates_origins_note: Debian security updates only; Proxmox's own packages (pve-*, kernel) stay manual on purpose
+host_updates_remove_unused: true # remove dependencies nothing needs any more after an update
+host_updates_reboot: false # never reboot by itself: castellan hosts the VMs and the iGPU

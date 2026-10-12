@@ -1,0 +1,37 @@
+---
+# Host firewall for one machine. Default: render the rules, have nft check them, show them, change nothing.
+# With host_firewall_apply=true: install nftables, write the rules + a systemd unit, load them with an automatic rollback,
+# prove that this machine is still reachable, and only then cancel the rollback and make the rules permanent.
+- name: Render the rules (nothing is written yet)
+  ansible.builtin.set_fact:
+    host_firewall_rendered: "{{ lookup('ansible.builtin.template', 'firewall.nft.j2') }}"
+
+- name: Is nft installed already?
+  ansible.builtin.stat:
+    path: /usr/sbin/nft
+  register: host_firewall_nft
+
+- name: Have nft check the rules without loading them
+  ansible.builtin.command:
+    cmd: /usr/sbin/nft -c -f -
+    stdin: "{{ host_firewall_rendered }}"
+  register: host_firewall_check
+  changed_when: false
+  check_mode: false
+  become: true
+  when: host_firewall_nft.stat.exists
+
+- name: The rules that will be loaded
+  ansible.builtin.debug:
+    msg: "{{ host_firewall_rendered.splitlines() | reject('match', '^\\s*$') | list }}"
+
+- name: Plan only
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'nft accepts these rules. ' if host_firewall_nft.stat.exists else 'nft is not installed here yet, so the rules were not syntax-checked. ' }}
+      Nothing was changed. Apply with: make host-firewall-apply
+  when: not host_firewall_apply | bool
+
+- name: Apply the firewall
+  ansible.builtin.include_tasks: apply.yml
+  when: host_firewall_apply | bool

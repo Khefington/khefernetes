@@ -1,0 +1,42 @@
+---
+# Automatic SECURITY updates for castellan. Debian's default policy applies: only the Debian-Security origin is upgraded
+# automatically. Proxmox packages and kernels are upgraded by you (apt full-upgrade or the web UI), because a Proxmox
+# update can need a reboot and a reboot takes every VM down.
+- name: Install unattended-upgrades
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - apt-listchanges
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Switch the daily run on
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      // Managed by Ansible (khefernetes, role host_updates).
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Our own overrides (a later file than 50unattended-upgrades wins)
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52khefernetes-unattended
+    mode: "0644"
+    content: |
+      // Managed by Ansible (khefernetes, role host_updates). {{ host_updates_origins_note }}.
+      Unattended-Upgrade::Remove-Unused-Dependencies "{{ host_updates_remove_unused | bool | lower }}";
+      Unattended-Upgrade::Automatic-Reboot "{{ host_updates_reboot | bool | lower }}";
+      Unattended-Upgrade::Mail "";
+
+- name: Check the configuration is valid
+  ansible.builtin.command: unattended-upgrade --dry-run
+  register: host_updates_dry
+  changed_when: false
+  check_mode: false
+
+- name: What the next run would do
+  ansible.builtin.debug:
+    msg: "{{ (host_updates_dry.stdout_lines + host_updates_dry.stderr_lines) | select('search', 'Packages that will be upgraded|No packages found|Allowed origins') | list }}"

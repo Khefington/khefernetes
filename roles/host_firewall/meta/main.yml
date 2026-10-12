@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: host_firewall
+  author: khefernetes
+  description: "Host firewall (nftables, input chain only) for castellan and the cluster VMs, applied with an automatic rollback"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

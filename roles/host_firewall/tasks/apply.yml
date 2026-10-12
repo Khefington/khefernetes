@@ -1,0 +1,100 @@
+---
+- name: Install nftables
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Folder for the rules
+  ansible.builtin.file:
+    path: "{{ host_firewall_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the rules
+  ansible.builtin.template:
+    src: firewall.nft.j2
+    dest: "{{ host_firewall_rules_path }}"
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  register: host_firewall_file
+
+- name: Write the systemd unit that loads them at boot
+  ansible.builtin.template:
+    src: khef-firewall.service.j2
+    dest: /etc/systemd/system/khef-firewall.service
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Pick up the unit now
+  ansible.builtin.meta: flush_handlers
+
+- name: Are the rules loaded right now?
+  ansible.builtin.command: "/usr/sbin/nft list table inet {{ host_firewall_table }}"
+  register: host_firewall_loaded
+  changed_when: false
+  failed_when: false
+
+- name: Is the service started?
+  ansible.builtin.systemd_service:
+    name: khef-firewall
+  register: host_firewall_service
+  check_mode: false
+
+- name: Load the rules, prove we can still get in, make them permanent
+  when: host_firewall_file.changed or host_firewall_loaded.rc != 0 or host_firewall_service.status.ActiveState != 'active'
+  block:
+    - name: Name this run's rollback timer
+      ansible.builtin.set_fact:
+        host_firewall_rollback_unit: "khef-fw-rollback-{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
+
+    - name: Arm the rollback (removes the rules by itself if we lose contact)
+      ansible.builtin.command: >-
+        systemd-run --unit={{ host_firewall_rollback_unit }} --on-active={{ host_firewall_rollback_seconds }}
+        /usr/sbin/nft delete table inet {{ host_firewall_table }}
+      changed_when: true
+
+    - name: Load the rules now
+      ansible.builtin.command: "/usr/sbin/nft -f {{ host_firewall_rules_path }}"
+      changed_when: true
+
+    - name: Open a NEW connection from the controller (it must pass the new rules)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        timeout: 20
+      delegate_to: localhost
+      become: false
+
+    - name: Reconnect
+      ansible.builtin.meta: reset_connection
+
+    - name: Prove Ansible still gets in
+      ansible.builtin.ping:
+
+    - name: Proxmox web UI still answers from the controller
+      ansible.builtin.uri:
+        url: "https://{{ ansible_host }}:8006/"
+        validate_certs: false
+        status_code: 200
+      delegate_to: localhost
+      become: false
+      when: inventory_hostname in groups['proxmox']
+
+    - name: Cancel the rollback
+      ansible.builtin.systemd_service:
+        name: "{{ host_firewall_rollback_unit }}.timer"
+        state: stopped
+
+    - name: Load the rules at every boot
+      ansible.builtin.systemd:
+        name: khef-firewall
+        enabled: true
+        state: started # (a restart would stop the firewall for a moment first)
+  rescue:
+    - name: Say what happens next
+      ansible.builtin.fail:
+        msg: >-
+          The firewall check failed on {{ inventory_hostname }}. The rules remove themselves {{ host_firewall_rollback_seconds }} seconds after
+          they were loaded (a one-off timer, khef-fw-rollback-*). Nothing is permanent. Read the error above, fix the rules, run again.

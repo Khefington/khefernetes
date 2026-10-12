@@ -68,11 +68,13 @@ KNOWN_LISTENERS = {
     "systemd-resolve": "local DNS stub",
     "systemd-timesyn": "time sync",
     "master": "mail (postfix, local delivery)",
+    "systemd-network": "DHCP client",
     "pvedaemon": "Proxmox daemon",
     "pmxcfs": "Proxmox cluster filesystem",
 }
 # Kernel services have no process name in `ss`; recognise them by port.
-KNOWN_PORTS = {"2049": "NFS server (kernel)", "111": "NFS helper (rpcbind)", "20048": "NFS server (mountd)"}
+KNOWN_PORTS = {"2049": "NFS server (kernel)", "111": "NFS helper (rpcbind)", "20048": "NFS server (mountd)",
+               "udp/8472": "Canal / flannel VXLAN overlay between the nodes (kernel)"}
 LOOPBACK = ("127.", "::1")
 
 
@@ -86,11 +88,23 @@ def parse_ss():
         if len(parts) < 5:
             continue
         proto, local = parts[0], parts[4]
-        addr, _, port = local.rpartition(":")
-        addr = addr.strip("[]")
-        m = re.search(r'\(\("([^"]+)"', line)
-        rows.append({"proto": proto, "addr": addr, "port": port, "proc": m.group(1) if m else "?"})
+        m = re.match(r"^\[?(?P<addr>[^\]]*?)\]?(?:%[^:\]]*)?:(?P<port>\d+|\*)$", local)
+        if not m:
+            continue
+        pm = re.search(r'\(\("([^"]+)"', line)
+        rows.append({"proto": proto, "addr": m.group("addr"), "port": m.group("port"), "proc": pm.group(1) if pm else "?"})
     return rows
+
+
+def rpc_ports():
+    """Ports registered with rpcbind (NFS lock manager, mountd, statd...): the kernel owns some of them, so `ss` shows no process."""
+    rc, out = run(["rpcinfo", "-p"])
+    found = {}
+    for line in out.splitlines()[1:]:
+        f = line.split()
+        if len(f) >= 5:
+            found[f[3]] = "NFS (%s)" % f[4]
+    return found
 
 
 def check_listeners():
@@ -98,22 +112,31 @@ def check_listeners():
     if not rows:
         emit("INFO", "listeners", "could not read the socket list (is `ss` installed and are you root?)")
         return
-    exposed = {}
+    rpc = rpc_ports()
+    groups = {}
     local_only = 0
     for r in rows:
         if r["addr"].startswith(LOOPBACK):
             local_only += 1
             continue
-        key = (r["proc"], r["proto"], r["port"])
-        exposed.setdefault(key, set()).add(r["addr"])
-    emit("INFO", "listeners", "%d sockets are bound to localhost only (not reachable from the network); %d are reachable from the network" % (local_only, len(exposed)))
-    for (proc, proto, port), addrs in sorted(exposed.items(), key=lambda kv: (kv[0][0], kv[0][1], int(kv[0][2]) if kv[0][2].isdigit() else 0)):
-        where = "all interfaces" if addrs & {"0.0.0.0", "::", "*"} else ", ".join(sorted(addrs))
-        what = next((v for k, v in KNOWN_LISTENERS.items() if proc.startswith(k)), None) or (KNOWN_PORTS.get(port) if proc == "?" else None)
+        proc, port = r["proc"], r["port"]
+        what = next((v for k, v in KNOWN_LISTENERS.items() if proc.startswith(k)), None)
+        if what is None and proc == "?":
+            what = KNOWN_PORTS.get("%s/%s" % (r["proto"], port)) or KNOWN_PORTS.get(port) or rpc.get(port)
+        label = proc if proc != "?" else "kernel"
+        g = groups.setdefault((label, what), {"ports": set(), "addrs": set()})
+        g["ports"].add("%s/%s" % (r["proto"], port))
+        g["addrs"].add(r["addr"])
+    n = sum(len(g["ports"]) for g in groups.values())
+    emit("INFO", "listeners", "%d sockets are bound to localhost only (not reachable from the network); %d are reachable from the network" % (local_only, n))
+    for (label, what), g in sorted(groups.items(), key=lambda kv: kv[0][0]):
+        ports = sorted(g["ports"], key=lambda x: (x.split("/")[1].isdigit() and int(x.split("/")[1]) or 0, x))
+        shown = ", ".join(ports[:6]) + (" ... (%d ports in all)" % len(ports) if len(ports) > 6 else "")
+        where = "all interfaces" if g["addrs"] & {"0.0.0.0", "::", "*"} else ", ".join(sorted(g["addrs"]))
         if what:
-            emit("INFO", "listeners", "%s/%s (%s) on %s: %s" % (proto, port, proc, where, what))
+            emit("INFO", "listeners", "%s [%s] on %s: %s" % (label, shown, where, what))
         else:
-            emit("WARN", "listeners", "%s/%s (%s) on %s: not one of the services this setup expects. Find out what it is" % (proto, port, proc, where))
+            emit("WARN", "listeners", "%s [%s] on %s: not one of the services this setup expects. Find out what it is" % (label, shown, where))
 
 
 # --------------------------------------------------------------------------------------------------
@@ -175,6 +198,13 @@ def check_firewall(kind):
             active = True
         else:
             emit("INFO", "firewall", "ufw is installed but not active")
+    if shutil.which("nft"):
+        rc, out = run(["nft", "list", "chain", "inet", "khef_filter", "input"])
+        if rc == 0 and "policy drop" in out:
+            emit("OK", "firewall", "khefernetes host firewall is loaded (nftables table khef_filter, input policy drop)")
+            active = True
+            if not os.path.exists("/etc/systemd/system/multi-user.target.wants/khef-firewall.service"):
+                emit("WARN", "firewall", "the firewall is loaded but khef-firewall.service is not enabled: it will be gone after a reboot")
     for tool in ("iptables", "ip6tables"):
         if shutil.which(tool):
             rc, out = run([tool, "-S", "INPUT"])
