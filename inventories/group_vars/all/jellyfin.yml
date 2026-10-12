@@ -17,10 +17,10 @@ jellyfin_users:
 # path is where the folder appears INSIDE the Jellyfin pod (the library is mounted at /media).
 # type: movies, tvshows, music, books, ... (Jellyfin's collection types)
 jellyfin_libraries:
-  - {name: Movies, type: movies, path: /media/movies}
-  - {name: Shows, type: tvshows, path: /media/tv}
-  - {name: Music, type: music, path: /media/music}
-  - {name: Books, type: books, path: /media/books}
+  - { name: Movies, type: movies, path: /media/movies }
+  - { name: Shows, type: tvshows, path: /media/tv }
+  - { name: Music, type: music, path: /media/music }
+  - { name: Books, type: books, path: /media/books }
 
 # Options applied to every library (a library entry can add `options:` to override).
 # The media library is mounted read-only, so nothing may be saved next to the media.
@@ -57,18 +57,18 @@ jellyfin_server_config:
 # --- Plugins -------------------------------------------------------------------------------
 # Jellyfin's own repository is always there. Add third-party ones here.
 jellyfin_plugin_repositories:
-  - {Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true}
+  - { Name: Intro Skipper, Url: "https://intro-skipper.org/manifest.json", Enabled: true }
 
 # name must match the catalogue name exactly. Without a version the newest compatible one is installed;
 # the end of the run prints what was installed: copy those versions here to pin them.
 # Third-party plugins run inside Jellyfin with full access, so add only what you have looked at.
 jellyfin_plugins:
-  - {name: Open Subtitles, version: "24.0.0.0"}
-  - {name: Intro Skipper, version: "1.10.11.24"}
+  - { name: Open Subtitles, version: "24.0.0.0" }
+  - { name: Intro Skipper, version: "1.10.11.24" }
   # Books and audiobooks: reads OPF / Calibre / ComicInfo metadata, Google Books and Comic Vine lookups.
   # In Jellyfin's own catalogue (13.0.0.0 targets 10.11). Deprecated: Jellyfin 12.0 has this built in,
   # so remove it from this list before upgrading to 12.0 (plugins built for 10.11 do not load there).
-  - {name: Bookshelf, version: "13.0.0.0"}
+  - { name: Bookshelf, version: "13.0.0.0" }
 
 # --- Playback / transcoding (Dashboard > Playback > Transcoding) --------------------------------
 # Settings listed here are re-applied on every provisioning run, so restoring an older backup (which overwrites
@@ -78,8 +78,10 @@ jellyfin_plugins:
 # proves the GPU works inside the pod before you rely on this.
 #   Low-power encoders use the GPU's fixed-function engine (needs the HuC firmware, which wyvern loads) and leave the
 #   shader units free. HEVC *encoding* stays off (AllowHevcEncoding): many clients cannot play it and H.264 is enough.
-#   Tone mapping (HDR -> SDR) is separate: the test prints whether it works here; if it says OK, add
-#   EnableTonemapping: true below.
+#   Tone mapping (HDR -> SDR, OpenCL on the GPU) keeps HDR films from looking washed out on SDR screens. If
+#   `make jellyfin-gpu-test` says the HDR probe failed, set EnableTonemapping to false.
+#   Throttling pauses ffmpeg once it is far enough ahead of what you are watching (after ThrottleDelaySeconds, 180 by
+#   default), so one transcode no longer keeps the GPU's video engine at 100% for the whole film.
 jellyfin_encoding_config:
   HardwareAccelerationType: qsv
   EnableHardwareEncoding: true
@@ -88,6 +90,8 @@ jellyfin_encoding_config:
   HardwareDecodingCodecs: [h264, hevc, mpeg2video, vc1, vp9, av1]
   EnableDecodingColorDepth10Hevc: true
   EnableDecodingColorDepth10Vp9: true
+  EnableTonemapping: true
+  EnableThrottling: true
 
 # --- Scheduled tasks -----------------------------------------------------------------------
 # Triggers to make sure each task has, keyed by the task's name as the Dashboard shows it. Only ADDS: Jellyfin's own
@@ -96,7 +100,7 @@ jellyfin_encoding_config:
 # List the tasks and their triggers with: make jellyfin-provision ARGS="-e jellyfin_provision_show_tasks=true"
 jellyfin_scheduled_task_triggers:
   Scan Media Library:
-    - {Type: StartupTrigger}
+    - { Type: StartupTrigger }
 
 # Plugin settings, keyed by plugin name; merged into the plugin's saved settings.
 # Find the setting names with: make jellyfin-provision ARGS="-e jellyfin_provision_show_plugin_config=true"

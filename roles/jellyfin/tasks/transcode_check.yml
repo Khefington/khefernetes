@@ -13,14 +13,19 @@
       for f in $(ls -t FFmpeg.Transcode-*.log 2>/dev/null | head -{{ jellyfin_transcode_check_count }}); do
         n=$((n + 1))
         hw=$(grep -m1 -o -E -- '-hwaccel [a-z0-9_]+' "$f" | cut -d' ' -f2)
-        codecs=$(grep -m1 -E -- 'ffmpeg|FFmpeg' "$f" | grep -o -E -- '-c:v(:[0-9])? [a-z0-9_]+' | tr '\n' ' ')
+        # ffmpeg's own summary of the video stream, e.g.  Stream #0:0 -> #0:0 (hevc (native) -> h264 (h264_qsv))
+        map=$(grep -m1 -E 'Stream #0:[0-9]+ -> #0:[0-9]+ \([a-z0-9_]+ \(' "$f")
+        dec=$(printf '%s' "$map" | sed -n -E 's/.*\(([a-z0-9_]+) \(([a-z0-9_]+)\) -> .*/\2/p')
+        enc=$(printf '%s' "$map" | sed -n -E 's/.*-> ([a-z0-9_]+) \(([a-z0-9_]+)\)\).*/\2/p')
         echo "== $f  ($(stat -c %y "$f" | cut -d. -f1))"
-        if [ -n "$hw" ]; then echo "   decoding: hardware ($hw)"; else echo "   decoding: software (no -hwaccel flag)"; fi
-        echo "   codec flags: ${codecs:-none found}"
-        case "$codecs" in
-          *_qsv*|*_vaapi*) echo "   encoding: hardware" ;;
-          *libx26*|*libvpx*|*libsvtav1*) echo "   encoding: SOFTWARE" ;;
-          *) echo "   encoding: unclear, read the log's first lines" ;;
+        case "$dec" in
+          *_qsv|*_vaapi) echo "   video decoding: HARDWARE (decoder $dec)" ;;
+          *) if [ -n "$hw" ]; then echo "   video decoding: HARDWARE (-hwaccel $hw)"; else echo "   video decoding: software"; fi ;;
+        esac
+        case "$enc" in
+          *_qsv|*_vaapi) echo "   video encoding: HARDWARE (encoder $enc)" ;;
+          "") echo "   video encoding: unknown (no video mapping line in this log; read its first lines)" ;;
+          *) echo "   video encoding: software (encoder $enc)" ;;
         esac
         grep -A3 -m1 'Stream mapping' "$f" | sed 's/^/   /'
       done
