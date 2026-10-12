@@ -9,7 +9,7 @@ VENV     := .venv
 
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
-        proxmox-template gpu-discover gpu-host dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
+        proxmox-template gpu-discover gpu-host gpu-guest-discover dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
         audit-media import-media flatten-media diagnose-jellyfin
 
 help: ## Show this help
@@ -46,6 +46,8 @@ gpu-discover: ## READ-ONLY report: is castellan ready to pass the Intel iGPU to 
 	$(PLAYBOOK) playbooks/proxmox/gpu_discover.yml
 gpu-host: ## Stage 1: check castellan and show the plan; apply with ARGS="-e gpu_passthrough_prepare=true" (never reboots)
 	$(PLAYBOOK) playbooks/proxmox/gpu_host.yml
+gpu-guest-discover: ## READ-ONLY report from inside wyvern: kernel, i915 driver, firmware, /dev/dri (stage 3)
+	$(PLAYBOOK) playbooks/cluster/gpu_guest_discover.yml
 dns: ## DNS server on castellan: *.home.lan -> the ingress (then point the router at castellan)
 	$(PLAYBOOK) playbooks/proxmox/dns.yml
 vms: ## Clone the template into the cluster VMs

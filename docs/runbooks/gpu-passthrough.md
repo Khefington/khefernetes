@@ -1,6 +1,6 @@
 # Quick Sync for Jellyfin: passing the Intel iGPU to wyvern
 
-**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is done: `make gpu-host` was applied, castellan was rebooted, and the iGPU is bound to `vfio-pci` (status READY). Stage 2 (`vm_gpu_passthrough` for wyvern) is written and waiting to be applied. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
+**Status:** stage 0 done (castellan is ready: GRUB, IOMMU on, iGPU alone in its IOMMU group, no monitor attached). Stage 1 is done: `make gpu-host` was applied, castellan was rebooted, and the iGPU is bound to `vfio-pci` (status READY). Stage 2 is done: wyvern is on q35 + UEFI and sees the iGPU (`lspci` shows `AlderLake-S GT1 [8086:4680]` at 01:00.0). Stage 3 starts with the read-only `make gpu-guest-discover`. Today Jellyfin transcodes in software (`/dev/dri` does not exist in the pod and `intel_gpu_top` on wyvern finds no GPU), even if "Intel QuickSync" is selected in the Dashboard.
 
 ## Why this is needed
 Jellyfin runs in a container on wyvern, which is a VM. A VM cannot see castellan's integrated GPU unless castellan hands it over (PCIe passthrough with VFIO). After that the VM has its own `/dev/dri`, and the Jellyfin pod can be given that device.
@@ -11,8 +11,8 @@ The i9-12900K's UHD 770 does hardware H.264, HEVC (also 10-bit) and VP9 decoding
 |---|---|---|---|
 | 0 | `make gpu-discover`: read-only report (IOMMU, boot method, the iGPU's IOMMU group, whether a monitor is attached, the VM's current hardware) | nothing | done |
 | 1 | VT-d is on (confirmed). `make gpu-host`: kernel options for the IOMMU, VFIO modules, keep `i915` away from the iGPU, rebuild initramfs. Then **you reboot castellan** | castellan boot config | done |
-| 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`), on the q35 machine type with UEFI (OVMF); applied by `make vms` | wyvern only (restarted) | ready to run |
-| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo` | wyvern only | after stage 2 |
+| 2 | wyvern gets the iGPU as a PCIe device (`hostpci0`), on the q35 machine type with UEFI (OVMF); applied by `make vms` | wyvern only (restarted) | done |
+| 3 | In wyvern: a kernel with the `i915` driver, firmware, media drivers; check `/dev/dri` and `vainfo`. First `make gpu-guest-discover` (read-only report) | wyvern only | in progress |
 | 4 | Jellyfin pod: mount `/dev/dri`, add the `render` group, set `jellyfin_encoding_config` (QSV), prove with an ffmpeg test | the Jellyfin deployment | last |
 
 The stage 0 report showed: UEFI boot with **GRUB** (not systemd-boot), kernel 6.8.12-43-pve, kernel line `quiet`, the IOMMU is already active (19 groups), the iGPU (`0000:00:02.0`, `8086:4680`) is alone in IOMMU group 0, no monitor is connected, and `vfio-pci` is available. So the kernel options go in `/etc/default/grub`.

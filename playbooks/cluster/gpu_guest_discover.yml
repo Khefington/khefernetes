@@ -1,0 +1,11 @@
+---
+# READ-ONLY report from inside the VM that has the iGPU (stage 3 of docs/runbooks/gpu-passthrough.md).
+#   ansible-playbook playbooks/cluster/gpu_guest_discover.yml
+- name: Look at the GPU from inside the VMs that received it
+  hosts: anvil_cluster
+  gather_facts: false
+  tasks:
+    - name: Report (only for hosts with vm_gpu_passthrough)
+      ansible.builtin.include_role:
+        name: gpu_guest_discover
+      when: vm_gpu_passthrough | default(false) | bool

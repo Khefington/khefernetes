@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: gpu_guest_discover
+  author: khefernetes
+  description: "Read-only report from inside a VM that received the iGPU: kernel flavour, i915 driver, firmware, /dev/dri"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

@@ -1,0 +1,44 @@
+---
+# READ-ONLY. Changes nothing in the VM. Prints what stage 3 (the guest side of Quick Sync) needs to know.
+- name: Collect the facts
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      section() { printf '\n== %s\n' "$1"; }
+      section "System"
+      grep PRETTY_NAME /etc/os-release
+      echo "Kernel running: $(uname -r)"
+      echo "Command line: $(cat /proc/cmdline)"
+      if [ -d /sys/firmware/efi ]; then echo "Boot mode: UEFI"; else echo "Boot mode: legacy BIOS"; fi
+      mokutil --sb-state 2>&1 | head -1 || true
+      section "The GPU as the VM sees it"
+      lspci -nnk 2>/dev/null | grep -A4 -i -E 'VGA compatible|Display controller' || echo "(no graphics device listed)"
+      section "/dev/dri and groups"
+      ls -l /dev/dri 2>&1 || true
+      getent group render video || true
+      section "Is the i915 driver available for the running kernel?"
+      modinfo -n i915 2>&1 | head -2
+      modinfo -n xe 2>&1 | head -2
+      lsmod | grep -E '^(i915|xe|drm)' || echo "(i915/xe not loaded)"
+      section "Messages about the GPU in the kernel log"
+      dmesg 2>/dev/null | grep -i -E 'i915|xe |drm|guc|huc|dmc|01:00.0' | head -30 || true
+      section "Installed kernels and firmware"
+      dpkg -l 'linux-image*' 'linux-modules*' 'linux-kvm' 'linux-generic*' 'linux-virtual*' 'linux-firmware' 2>/dev/null | awk '/^ii/ {print $2, $3}'
+      section "Which kernel could be installed"
+      apt-cache policy linux-image-generic linux-firmware 2>/dev/null | grep -E '^[a-z]|Candidate' || true
+      section "Boot loader choice"
+      grep -E '^GRUB_(DEFAULT|CMDLINE)' /etc/default/grub 2>/dev/null || true
+      ls /etc/default/grub.d 2>/dev/null || true
+      section "Tools for testing"
+      for t in vainfo intel_gpu_top; do command -v "$t" >/dev/null && echo "$t: installed" || echo "$t: not installed"; done
+      section "Room"
+      df -h /boot / 2>/dev/null
+      free -m | awk 'NR==1 || NR==2'
+  register: gpu_guest_discover_report
+  changed_when: false
+  check_mode: false
+
+- name: The report (paste all of it back)
+  ansible.builtin.debug:
+    var: gpu_guest_discover_report.stdout_lines
