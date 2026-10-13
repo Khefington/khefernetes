@@ -4,4 +4,4 @@
 #   ansible-vault edit inventories/group_vars/all/vault.yml     and add   vault_duckdns_token: "<the token>"
 # and write the name below. Then:  make ddns
 # Leave the name empty to switch this off (the VPN then writes your current IP address into each client file instead).
-ddns_duckdns_subdomain: "khefernetes"
+ddns_duckdns_subdomain: ""

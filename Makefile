@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,9 @@ ping: ## Can Ansible reach every host?
 	$(PLAYBOOK) playbooks/ping.yml
 site: ## Run the whole build in order
 	$(PLAYBOOK) playbooks/site.yml
+
+rebuild: ## After destroy-vms: build everything, restore Jellyfin (asks RESTORE), harden, VPN, first backups, audit (ARGS="-e rebuild_restore=false" on a first build)
+	$(PLAYBOOK) playbooks/rebuild.yml
 
 proxmox-api: ## Create/refresh the Proxmox API role, user and token (add ARGS="-e proxmox_bootstrap_rotate_token=true" to rotate)
 	$(PLAYBOOK) playbooks/proxmox/bootstrap.yml --tags api

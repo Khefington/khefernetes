@@ -10,17 +10,17 @@ k8s_hardening_manifest_path: "{{ k8s_app_manifest_dir }}/network-policies.yaml"
 #   restricted = baseline + must run as non-root, drop all capabilities, use the seccomp profile
 # `audit` only records violations of a stricter level without blocking, so we can see how close we are.
 k8s_hardening_namespace_levels:
-  "{{ media_namespace }}": {enforce: baseline, audit: restricted} # Jellyfin's start-up helper runs as root (chown), so not `restricted` yet
-  intel-gpu-plugin: {enforce: privileged} # needs hostPath: /dev/dri and the kubelet's device-plugin socket
-  local-path-storage: {enforce: privileged} # its helper pods create folders on the node
-  metallb-system: {enforce: privileged} # the speaker needs host networking
+  "{{ media_namespace }}": { enforce: baseline, audit: restricted } # Jellyfin's start-up helper runs as root (chown), so not `restricted` yet
+  intel-gpu-plugin: { enforce: privileged } # needs hostPath: /dev/dri and the kubelet's device-plugin socket
+  local-path-storage: { enforce: privileged } # its helper pods create folders on the node
+  metallb-system: { enforce: privileged } # the speaker needs host networking
 
 # How to recognise the pods that may talk to Jellyfin through the ingress, and the DNS pods.
 k8s_hardening_ingress_pod_labels:
-  traefik: {app.kubernetes.io/name: rke2-traefik}
-  ingress-nginx: {app.kubernetes.io/name: rke2-ingress-nginx}
+  traefik: { app.kubernetes.io/name: rke2-traefik }
+  ingress-nginx: { app.kubernetes.io/name: rke2-ingress-nginx }
 k8s_hardening_ingress_namespace: kube-system # where the ingress controller runs (RKE2 puts both controllers in kube-system)
-k8s_hardening_dns_pod_labels: {k8s-app: kube-dns}
+k8s_hardening_dns_pod_labels: { k8s-app: kube-dns }
 
 # Jellyfin may reach the internet (metadata, plugin catalogue) but not your LAN, other pods or the cloud metadata address.
 k8s_hardening_private_ranges: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]

@@ -2,6 +2,8 @@
 # The whole build, in order. Everything is idempotent, so re-running it is safe.
 #   ansible-playbook playbooks/site.yml
 #
+# After a teardown, `make rebuild` (playbooks/rebuild.yml) runs this PLUS the Jellyfin restore, hardening, VPN, first backups and the audit.
+#
 # Left out on purpose (one-off or destructive; run them by hand when you mean it):
 #   proxmox/bootstrap.yml, proxmox/harden.yml   first-time host setup
 #   proxmox/staging_disk.yml -e staging_disk_prepare=true   formats a disk

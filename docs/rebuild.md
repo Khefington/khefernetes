@@ -24,6 +24,17 @@ Take it one numbered step at a time and check the "You should see" line before g
 *You should see:* VMs 201, 202 and 203 gone in the Proxmox web UI, template 9000 still there, and the HDD and SSD untouched.
 The playbook removes the old SSH host keys from your PC too, so the new VMs will not trigger "host key changed" errors.
 
+## 2b. The short way: `make rebuild`
+After step 2 you can run everything below (steps 3 to 6) with one command: `make rebuild`.
+It checks first that the vault has every secret (a placeholder or a missing one stops it before anything is built), then runs, in this order:
+`make site` (steps 3.1 to 3.8) > the Jellyfin restore (step 4; it stops and asks you to type `RESTORE`) > host firewall + updates > cluster hardening > WireGuard (and DuckDNS, if `ddns_duckdns_subdomain` is set) > one Jellyfin backup and one etcd snapshot > the read-only security audit > a short checklist of what to look at by hand (step 5).
+- **First build, or nothing to restore:** `make rebuild ARGS="-e rebuild_restore=false"`.
+- Other switches (all on by default; `-e name=false` turns one off): `rebuild_harden`, `rebuild_vpn`, `rebuild_backups`, `rebuild_audit`. Example: `make rebuild ARGS="-e rebuild_harden=false -e rebuild_audit=false"`.
+- It is safe to run again if it stops half way: every stage looks first and only changes what differs. Fix the cause, run `make rebuild` again. If the failure was in the hardening part, the automatic rollbacks have already put things back.
+- The first backups run **after** the restore, so the newest zip is the restored server, never an empty one. Do run it before the 05:30 job has fired on the new cluster.
+- Still by hand: `make destroy-vms` (it deletes things, so it asks), the first-time Proxmox setup, and the router (the DNS server address, the UDP 51820 forward).
+The stage-by-stage form in section 3 is for finding out which step breaks.
+
 ## 3. Rebuild, one stage at a time
 | # | Command | You should see |
 |---|---|---|
@@ -79,6 +90,7 @@ If you do **not** need the old watch history, skip step 1 and 2: the provisioned
 - If you want to practice a real etcd restore as well, do it now, before relying on the snapshots: `docs/runbooks/etcd-restore.md`.
 
 ## 6. Hardening after a rebuild
+(`make rebuild` already does all of this; the list is for running the steps one at a time.)
 The VMs are new, so their firewall and the cluster's policies are new too; castellan was not rebuilt, so its firewall and the VPN are still in place (the keys live on castellan).
 1. `make host-firewall-apply` (VMs get their firewall; castellan's is unchanged and is skipped).
 2. `make cluster-hardening-apply` (pod-security labels and the `media` NetworkPolicies, with live proofs).
