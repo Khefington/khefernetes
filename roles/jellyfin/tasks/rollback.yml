@@ -1,0 +1,96 @@
+---
+# Put the config volume back the way it was before `make jellyfin-upgrade` and start the old version.
+# Run with:  make jellyfin-rollback   (it sets jellyfin_version to the old tag; see playbooks/apps/jellyfin_rollback.yml)
+- name: Which Jellyfin image runs now?
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get deployment jellyfin -o jsonpath={.spec.template.spec.containers[0].image}"
+  register: jellyfin_rb_image
+  changed_when: false
+
+- name: Which node holds the config volume and where is it?
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      pv=$({{ kubectl_cmd }} -n {{ media_namespace }} get pvc jellyfin-config -o jsonpath='{.spec.volumeName}')
+      {{ kubectl_cmd }} get pv "$pv" -o jsonpath='{.spec.hostPath.path}{.spec.local.path}'; echo
+      {{ kubectl_cmd }} -n {{ media_namespace }} get pod -l app=jellyfin -o jsonpath='{.items[0].spec.nodeName}'; echo
+    executable: /bin/bash
+  register: jellyfin_rb_where
+  changed_when: false
+
+- name: Remember them
+  ansible.builtin.set_fact:
+    jellyfin_rb_path: "{{ jellyfin_rb_where.stdout_lines[0] | trim }}"
+    jellyfin_rb_node: "{{ jellyfin_rb_where.stdout_lines[1] | trim }}"
+
+- name: Which copies exist? (newest last)
+  ansible.builtin.shell:
+    cmd: "set -o pipefail; ls -1d {{ jellyfin_rb_path }}-pre-upgrade-* 2>/dev/null | sort || true"
+    executable: /bin/bash
+  delegate_to: "{{ jellyfin_rb_node }}"
+  become: true
+  register: jellyfin_rb_copies
+  changed_when: false
+
+- name: Choose one
+  ansible.builtin.set_fact:
+    jellyfin_rb_copy: "{{ jellyfin_upgrade_snapshot_dir if jellyfin_upgrade_snapshot_dir | length > 0 else (jellyfin_rb_copies.stdout_lines | last | default('')) }}"
+
+- name: Stop if there is nothing to go back to
+  ansible.builtin.assert:
+    that:
+      - jellyfin_rb_copy | length > 0
+      - jellyfin_rb_copy in jellyfin_rb_copies.stdout_lines
+    fail_msg: >-
+      No copy of the config volume found next to {{ jellyfin_rb_path }} (copies: {{ jellyfin_rb_copies.stdout_lines }}). The way back is then
+      the backup zip taken before the upgrade: docs/runbooks/jellyfin-upgrade.md, "Slow way back".
+    quiet: true
+
+- name: Ask for confirmation
+  ansible.builtin.pause:
+    prompt: >-
+      This puts Jellyfin's config volume back to the copy {{ jellyfin_rb_copy | basename }} and starts the image {{ jellyfin_version }}.
+      Whatever Jellyfin stored since the upgrade (watch history, new users) is lost; the failed volume is kept beside it as '-failed-<time>'.
+      Type ROLLBACK to continue
+  register: jellyfin_rollback_answer
+  when: jellyfin_rollback_confirm | length == 0
+
+- name: Stop unless the word was typed exactly
+  ansible.builtin.assert:
+    that: (jellyfin_rollback_confirm if jellyfin_rollback_confirm | length > 0 else jellyfin_rollback_answer.user_input) == 'ROLLBACK'
+    fail_msg: Nothing was changed.
+    quiet: true
+
+- name: Stop Jellyfin
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/jellyfin --replicas=0"
+  changed_when: true
+
+- name: Wait until its pod is gone
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} wait --for=delete pod -l app=jellyfin --timeout=180s"
+  changed_when: false
+
+- name: Swap the volumes (the upgraded one is kept)
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      cur="{{ jellyfin_rb_path }}"
+      copy="{{ jellyfin_rb_copy }}"
+      test -d "$cur" && test -d "$copy"
+      mv "$cur" "${cur}-failed-$(date +%Y%m%d-%H%M%S)"
+      cp -a "$copy" "$cur"
+    executable: /bin/bash
+  delegate_to: "{{ jellyfin_rb_node }}"
+  become: true
+  changed_when: true
+
+- name: Start the old version
+  ansible.builtin.include_tasks: main.yml
+  vars:
+    jellyfin_allow_downgrade: true
+    jellyfin_upgrade_confirmed: true
+
+- name: Rolled back
+  ansible.builtin.debug:
+    msg:
+      - "Jellyfin {{ jellyfin_version }} is running on the config volume from before the upgrade."
+      - "Set jellyfin_version back to {{ jellyfin_version }} in inventories/group_vars/all/versions.yml (and the plugin list in jellyfin.yml) so the repo matches."
+      - "The 12.x volume is still on the node as {{ jellyfin_rb_path }}-failed-*; delete it when you are sure."

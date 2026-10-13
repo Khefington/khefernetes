@@ -90,6 +90,15 @@
       -e jellyfin_restore_archive=<file> (or -e jellyfin_restore_allow_newer=true, not recommended).
     quiet: true
 
+- name: Warn when the zip comes from an older major version than the one running
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: {{ jellyfin_restore_chosen_name }} was made by Jellyfin {{ jellyfin_restore_chosen.ServerVersion }} but {{ jellyfin_restore_info.json.Version }}
+      is running. Restoring an older major version's backup onto a newer one is NOT something this repo has tested; the tested route is to
+      upgrade in place (make jellyfin-upgrade) and restore a backup made by the new version. If it goes wrong, the nightly 12.x backup or a fresh
+      server on the old version (docs/runbooks/jellyfin-upgrade.md, "Slow way back") are the fallbacks.
+  when: jellyfin_restore_chosen.ServerVersion.split('.')[0] | int < jellyfin_restore_info.json.Version.split('.')[0] | int
+
 - name: Ask for confirmation
   ansible.builtin.pause:
     prompt: >-

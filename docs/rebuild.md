@@ -8,6 +8,7 @@
 Take it one numbered step at a time and check the "You should see" line before going on. Nothing in steps 3 to 5 can touch your media.
 
 ## 1. Before you destroy anything
+0. **Jellyfin version:** the repo now says Jellyfin 12. Upgrade the live server first (`docs/runbooks/jellyfin-upgrade.md`) and take a backup made by 12 (`make backup-now`); a rebuild then restores a 12 backup onto 12. Restoring a 10.11 zip onto a fresh 12 is untested (the restore warns).
 1. Apply the repo to your checkout, then `git status` and commit. From now until the VMs are gone, **do not run `make rke2`, `make networking` or `make jellyfin` against the live cluster**: the inventory now says Traefik and the new RKE2 token.
 2. Make sure your Python tools are current: `make setup`, then `source .venv/bin/activate`. The Proxmox steps (`make vms`, `make destroy-vms`) need proxmoxer 2.3 or newer, and they stop with a message if it is older.
 3. Open the vault (`ansible-vault edit inventories/group_vars/all/vault.yml`) and confirm `vault_rke2_token` is the new token you generated.
@@ -61,7 +62,7 @@ After step 5: `kubectl get svc -A | grep LoadBalancer` should show `rke2-traefik
 Step 3.8 already did everything this repo describes: the wizard, the `Khef` admin, the libraries, plugins, settings and the backup API key.
 What is left is the data only a backup holds: watch history and each user's preferences.
 
-**Checkpoint before restoring (this is the real test of the repo):** open `http://jellyfin.home.lan`, log in as `Khef` with the vault password, and look at Dashboard > Plugins (Open Subtitles, Intro Skipper, Bookshelf Active), Dashboard > Libraries (Movies, Shows, Music, Books) and Dashboard > API Keys (`khefernetes-backup`).
+**Checkpoint before restoring (this is the real test of the repo):** open `http://jellyfin.home.lan`, log in as `Khef` with the vault password, and look at Dashboard > Plugins (Open Subtitles Active; on a 10.11 rebuild also Intro Skipper and Bookshelf), Dashboard > Libraries (Movies, Shows, Music, Books) and Dashboard > API Keys (`khefernetes-backup`).
 If all of that is there, the rebuild from the repo alone worked. Write down anything that was missing: that is a gap in the repo to fix.
 0. Before restoring, look inside the backup you are about to use. Jellyfin's backup is a zip holding the database (users, watch history, saved home screen settings),
    the settings files (`system.xml`, `encoding.xml` with the hardware-acceleration setting, `branding.xml`), the profile pictures and the library definitions.

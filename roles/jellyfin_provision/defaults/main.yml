@@ -33,6 +33,8 @@ jellyfin_library_options: {}
 jellyfin_server_config: {}
 jellyfin_plugin_repositories: []
 jellyfin_plugins: []
+jellyfin_plugins_remove: [] # plugin names to uninstall if present (e.g. ones that only exist for an older Jellyfin)
+jellyfin_plugin_repositories_remove: [] # repository URLs to unregister if present
 jellyfin_plugin_settings: {}
 jellyfin_scheduled_task_triggers: {}
 jellyfin_encoding_config: {}

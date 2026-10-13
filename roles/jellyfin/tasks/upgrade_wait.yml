@@ -1,0 +1,37 @@
+---
+# Wait until the new Jellyfin has FINISHED starting. The pod counts as ready while the server still answers "Degraded"
+# ("Server is still starting up"): that is when the database migration and the clean-up passes run, and /System/Info/Public
+# has no Version yet. So: wait for /health to say Healthy and for a real version, for up to jellyfin_upgrade_startup_minutes.
+- name: Find Jellyfin
+  ansible.builtin.include_tasks: api_endpoint.yml
+  when: jellyfin_api_url is not defined
+
+- name: Wait until the server reports Healthy (the migration is finished)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/health"
+    return_content: true
+    status_code: [200, 503]
+  register: jellyfin_upgrade_health
+  until: jellyfin_upgrade_health.status is defined and jellyfin_upgrade_health.status == 200 and (jellyfin_upgrade_health.content | default('') | trim) == 'Healthy'
+  retries: "{{ (jellyfin_upgrade_startup_minutes | int * 6) }}"
+  delay: 10
+  changed_when: false
+
+- name: Ask which version answers now
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/System/Info/Public"
+  register: jellyfin_upgrade_public
+  until: jellyfin_upgrade_public.status is defined and jellyfin_upgrade_public.status == 200 and jellyfin_upgrade_public.json is mapping and 'Version' in jellyfin_upgrade_public.json
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Check it is the new major version and that it is still set up
+  ansible.builtin.assert:
+    that:
+      - jellyfin_upgrade_public.json.Version.split('.')[0] == (jellyfin_version | string).split('.')[0]
+      - jellyfin_upgrade_public.json.StartupWizardCompleted | default(false)
+    fail_msg: >-
+      Jellyfin answers as {{ jellyfin_upgrade_public.json.Version | default('?') }}, wizard completed:
+      {{ jellyfin_upgrade_public.json.StartupWizardCompleted | default('?') }}. That is not the expected result.
+    quiet: true

@@ -96,7 +96,7 @@ spec:
           startupProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 5
-            failureThreshold: 60     # allows up to 5 minutes for the first start
+            failureThreshold: {{ (jellyfin_startup_timeout_seconds | int / 5) | round(0, 'ceil') | int }}     # {{ jellyfin_startup_timeout_seconds }} s for the first answer (a major upgrade migrates the database during this time)
           readinessProbe:
             httpGet: {path: /health, port: http}
             periodSeconds: 10

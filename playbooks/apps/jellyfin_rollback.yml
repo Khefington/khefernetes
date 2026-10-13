@@ -1,0 +1,20 @@
+---
+# Go back to the Jellyfin version from before `make jellyfin-upgrade`, using the copy of the config volume it made.
+#   make jellyfin-rollback JELLYFIN_OLD=10.11.11
+# Asks you to type ROLLBACK. Everything done in Jellyfin after the upgrade is lost (the copy is from before it).
+- name: Roll Jellyfin back
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  vars:
+    jellyfin_version: "{{ jellyfin_rollback_version }}"
+  tasks:
+    - name: Require the old version to be named
+      ansible.builtin.assert:
+        that: jellyfin_rollback_version is defined and jellyfin_rollback_version | length > 0
+        fail_msg: "Say which version to go back to:  make jellyfin-rollback JELLYFIN_OLD=10.11.11  (what it ran before the upgrade)."
+        quiet: true
+
+    - name: Put the copy back and start that version
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: rollback.yml

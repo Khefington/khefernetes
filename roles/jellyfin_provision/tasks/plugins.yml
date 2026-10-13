@@ -21,10 +21,48 @@
     body: "{{ jellyfin_provision_repos.json + jellyfin_provision_repos_missing }}"
     status_code: 204
   when: jellyfin_provision_repos_missing | length > 0
-
-  # 2) Install the plugins that are not there yet.
   changed_when: true
+
+# 1b) Forget repositories we no longer want (jellyfin_plugin_repositories_remove, by URL).
+- name: Unregister the repositories that are to go
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Repositories"
+    method: POST
+    body_format: json
+    body: >-
+      {{ (jellyfin_provision_repos.json + jellyfin_provision_repos_missing)
+         | rejectattr('Url', 'in', jellyfin_plugin_repositories_remove) | list }}
+    status_code: 204
+  when: (jellyfin_provision_repos.json | map(attribute='Url') | select('in', jellyfin_plugin_repositories_remove) | list | length) > 0
+  changed_when: true
+
+# 2) Uninstall the plugins we no longer want (jellyfin_plugins_remove, by name), then install the ones that are not there yet.
 - name: Read the installed plugins
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins"
+  register: jellyfin_provision_plugins_before
+  changed_when: false
+
+- name: Uninstall the unwanted ones
+  ansible.builtin.uri:
+    url: "{{ jellyfin_provision_url }}/Plugins/{{ item.Id }}/{{ item.Version }}"
+    method: DELETE
+    status_code: [204, 404]
+  loop: "{{ jellyfin_provision_plugins_before.json | selectattr('Name', 'in', jellyfin_plugins_remove) | list }}"
+  loop_control:
+    label: "{{ item.Name }} {{ item.Version }}"
+  changed_when: true
+  register: jellyfin_provision_plugins_removed
+
+- name: Note that a restart is needed for them to leave
+  ansible.builtin.set_fact:
+    jellyfin_provision_installed_now: "{{ jellyfin_provision_installed_now | default([]) + [item.item.Name ~ ' (removed)'] }}"
+  loop: "{{ jellyfin_provision_plugins_removed.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.Name | default('') }}"
+  when: item.item is defined
+
+- name: Read the installed plugins again
   ansible.builtin.uri:
     url: "{{ jellyfin_provision_url }}/Plugins"
   register: jellyfin_provision_plugins

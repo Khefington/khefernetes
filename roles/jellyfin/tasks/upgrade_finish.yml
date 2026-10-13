@@ -1,0 +1,14 @@
+---
+# After the upgrade: start a library scan so 12's new database fills in anything the migration left out. Returns at once; Jellyfin scans in the background.
+- name: Find Jellyfin and its API key
+  ansible.builtin.include_tasks: api_endpoint.yml
+
+- name: Start the library scan
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Library/Refresh"
+    method: POST
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+    status_code: 204
+  changed_when: true
+  no_log: true

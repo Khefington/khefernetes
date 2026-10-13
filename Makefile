@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-upgrade-check jellyfin-upgrade jellyfin-upgrade-finish jellyfin-rollback jellyfin-upgrade-cleanup jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -79,6 +79,16 @@ jellyfin-transcode-check: ## READ-ONLY: did the latest playbacks use the GPU? (r
 	$(PLAYBOOK) playbooks/apps/jellyfin_transcode_check.yml
 jellyfin-restore: ## Restore Jellyfin from its newest backup (asks you to type RESTORE), then re-provision + re-attach pictures
 	$(PLAYBOOK) playbooks/apps/jellyfin_restore.yml
+jellyfin-upgrade-check: ## READ-ONLY: is Jellyfin ready for the major upgrade in versions.yml? (blockers, warnings, plugins to remove, disk room)
+	$(PLAYBOOK) playbooks/apps/jellyfin_upgrade_check.yml
+jellyfin-upgrade: ## Upgrade Jellyfin 10.11 -> 12: backup, copy the config volume, migrate, re-provision (asks you to type UPGRADE)
+	$(PLAYBOOK) playbooks/apps/jellyfin_upgrade.yml
+jellyfin-upgrade-finish: ## Carry on after an upgrade that only stopped because the migration was slow (settings, scan, backup, GPU test)
+	$(PLAYBOOK) playbooks/apps/jellyfin_upgrade_finish.yml
+jellyfin-rollback: ## Undo a failed upgrade from the volume copy:  make jellyfin-rollback JELLYFIN_OLD=10.11.11 (asks you to type ROLLBACK)
+	$(PLAYBOOK) playbooks/apps/jellyfin_rollback.yml -e jellyfin_rollback_version=$(JELLYFIN_OLD)
+jellyfin-upgrade-cleanup: ## Delete the config-volume copies the upgrade left on the node (asks you to type DELETE)
+	$(PLAYBOOK) playbooks/apps/jellyfin_upgrade_cleanup.yml
 jellyfin-profile-check: ## READ-ONLY: are users' profile pictures linked? (shows picture files found in the pod)
 	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml
 jellyfin-profile-fix: ## Re-attach profile pictures that are on disk but no longer linked to their user

@@ -1,0 +1,11 @@
+---
+# Delete the config-volume copies that `make jellyfin-upgrade` left on the node (and the failed ones a rollback left).
+#   make jellyfin-upgrade-cleanup           (lists them, asks you to type DELETE)
+- name: Delete the pre-upgrade copies of the config volume
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Find and delete them
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: upgrade_cleanup.yml

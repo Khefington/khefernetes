@@ -1,0 +1,114 @@
+---
+# READ-ONLY readiness check for a major Jellyfin upgrade (10.11 -> 12). Changes nothing.
+# Sets jellyfin_up_blockers (must be empty to go on), jellyfin_up_warnings and jellyfin_up_remove_plugins for upgrade.yml.
+- name: Find Jellyfin and its API key
+  ansible.builtin.include_tasks: api_endpoint.yml
+
+- name: Stop with a helpful message if there is no API key yet
+  ansible.builtin.assert:
+    that: jellyfin_api_key | length > 0
+    fail_msg: "There is no API key yet: run `make jellyfin-provision` first (it creates the key and the Secret 'jellyfin-api')."
+    quiet: true
+
+- name: Ask Jellyfin about itself, its users, plugins, backups, tasks and sessions
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}{{ item.path }}"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+  loop:
+    - {name: info, path: /System/Info}
+    - {name: users, path: /Users}
+    - {name: plugins, path: /Plugins}
+    - {name: backups, path: /Backup}
+    - {name: tasks, path: /ScheduledTasks}
+    - {name: sessions, path: "/Sessions?activeWithinSeconds=300"}
+  loop_control:
+    label: "{{ item.path }}"
+  register: jellyfin_up_answers
+  changed_when: false
+  no_log: true
+
+- name: Put the answers in one place
+  ansible.builtin.set_fact:
+    jellyfin_up: "{{ dict(jellyfin_up_answers.results | map(attribute='item.name') | zip(jellyfin_up_answers.results | map(attribute='json'))) }}"
+  no_log: true
+
+- name: Which image runs, on which node, and how much room is there on the config volume?
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      {{ kubectl_cmd }} -n {{ media_namespace }} get deployment jellyfin -o jsonpath='{.spec.template.spec.containers[0].image}'; echo
+      {{ kubectl_cmd }} -n {{ media_namespace }} get pod -l app=jellyfin -o jsonpath='{.items[0].spec.nodeName}'; echo
+      {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin -c jellyfin -- sh -c 'du -skx /config | cut -f1; df -Pk /config | tail -n1 | tr -s " " | cut -d" " -f4'
+    executable: /bin/bash
+  register: jellyfin_up_where
+  changed_when: false
+  check_mode: false
+
+- name: Work out the numbers
+  ansible.builtin.set_fact:
+    jellyfin_up_image: "{{ jellyfin_up_where.stdout_lines[0] }}"
+    jellyfin_up_node: "{{ jellyfin_up_where.stdout_lines[1] }}"
+    jellyfin_up_used_kb: "{{ jellyfin_up_where.stdout_lines[2] | int }}"
+    jellyfin_up_free_kb: "{{ jellyfin_up_where.stdout_lines[3] | int }}"
+    jellyfin_up_running: "{{ jellyfin_up.info.Version }}"
+    jellyfin_up_names_lower: "{{ jellyfin_up.users | map(attribute='Name') | map('lower') | list }}"
+    jellyfin_up_remove_plugins: "{{ jellyfin_up.plugins | selectattr('CanUninstall', 'defined') | selectattr('CanUninstall') | list }}"
+    jellyfin_up_active: "{{ jellyfin_up.sessions | selectattr('NowPlayingItem', 'defined') | list }}"
+    jellyfin_up_running_tasks: "{{ jellyfin_up.tasks | selectattr('State', 'equalto', 'Running') | map(attribute='Name') | list }}"
+  no_log: true
+
+- name: Which usernames differ only in capitals?
+  ansible.builtin.set_fact:
+    jellyfin_up_dupes: >-
+      {%- set d = [] -%}
+      {%- for n in jellyfin_up_names_lower | unique -%}
+      {%- if jellyfin_up_names_lower.count(n) > 1 -%}{%- set _ = d.append(n) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ d }}
+  no_log: true
+
+- name: Collect what stops the upgrade
+  ansible.builtin.set_fact:
+    jellyfin_up_blockers: >-
+      {{ ([] +
+          (['Jellyfin ' ~ jellyfin_up_running ~ ' is too old: 12 only upgrades from ' ~ jellyfin_upgrade_min_from ~ ' or any 10.11.x. Upgrade to 10.11 first.']
+           if jellyfin_up_running is version(jellyfin_upgrade_min_from, '<') else []) +
+          (['Jellyfin ' ~ jellyfin_up_running ~ ' is already past the version in the repo (' ~ jellyfin_version ~ '); there is nothing to upgrade.']
+           if jellyfin_up_running.split('.')[0] | int >= (jellyfin_version | string).split('.')[0] | int else []) +
+          (['Usernames that differ only in capitals (12 treats them as the same name, and the migration fails): ' ~ jellyfin_up_dupes | join(', ')
+            ~ '. Rename or delete the extra account(s) in Dashboard > Users first.'] if jellyfin_up_dupes | length > 0 else []) +
+          (['The config volume has ' ~ (jellyfin_up_free_kb | int // 1024) ~ ' MiB free but Jellyfin uses ' ~ (jellyfin_up_used_kb | int // 1024)
+            ~ ' MiB there; the upgrade rewrites the database and the snapshot copies it (want ' ~ jellyfin_upgrade_space_factor ~ 'x). Grow jellyfin_config_size or clean up.']
+           if (jellyfin_up_free_kb | int) < (jellyfin_up_used_kb | int) * (jellyfin_upgrade_space_factor | int) else [])) }}
+  no_log: true
+
+- name: Collect what to know
+  ansible.builtin.set_fact:
+    jellyfin_up_warnings: >-
+      {{ ([] +
+          (['Someone is playing something right now (' ~ (jellyfin_up_active | map(attribute='UserName') | join(', ')) ~ '); the upgrade interrupts it.'] if jellyfin_up_active | length > 0 else []) +
+          (['These tasks are running and will be cut off (they restart later): ' ~ (jellyfin_up_running_tasks | join(', '))] if jellyfin_up_running_tasks | length > 0 else []) +
+          (['Jellyfin sees no backup zips at all. The upgrade makes one first, but check that the HDD backup folder is mounted.'] if jellyfin_up.backups | length == 0 else [])) }}
+    jellyfin_up_plugin_list: >-
+      {{ jellyfin_up_remove_plugins | map(attribute='Name') | zip(jellyfin_up_remove_plugins | map(attribute='Version')) | map('join', ' ') | list }}
+    jellyfin_up_newest_backup: "{{ jellyfin_up.backups | map(attribute='DateCreated') | sort | last | default('none') }}"
+  no_log: true
+
+- name: The check
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['Running: Jellyfin ' ~ jellyfin_up_running ~ ' (image ' ~ jellyfin_up_image ~ ', node ' ~ jellyfin_up_node ~ ')',
+          'The repo asks for image tag: ' ~ jellyfin_version,
+          'Users: ' ~ (jellyfin_up.users | map(attribute='Name') | join(', ')),
+          'Plugins uninstalled before the upgrade (the ones in jellyfin_plugins are installed again afterwards): ' ~ (jellyfin_up_plugin_list | join(', ') or 'none'),
+          'Backups Jellyfin can see: ' ~ (jellyfin_up.backups | length) ~ ' (newest ' ~ jellyfin_up_newest_backup ~ ')',
+          'Config volume: ' ~ (jellyfin_up_used_kb | int // 1024) ~ ' MiB used, ' ~ (jellyfin_up_free_kb | int // 1024) ~ ' MiB free']
+         + (jellyfin_up_warnings | map('regex_replace', '^', 'WARNING: ') | list)
+         + (jellyfin_up_blockers | map('regex_replace', '^', 'BLOCKER: ') | list) }}
+
+- name: Verdict
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Ready. Run: make jellyfin-upgrade' if jellyfin_up_blockers | length == 0 else
+         'NOT ready: fix the BLOCKER lines above, then run make jellyfin-upgrade-check again.' }}

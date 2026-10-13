@@ -1,0 +1,127 @@
+---
+# Step 2 of `make jellyfin-upgrade` (after the backup): uninstall plugins, stop Jellyfin, copy the config volume, start the new
+# version and wait for the database migration. Any failure ends in the rollback instructions; nothing is rolled back by itself,
+# because a migration that is still running must not be interrupted.
+- name: Find the newest backup and prove it was made just now
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Backup"
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+  register: jellyfin_upgrade_backups
+  changed_when: false
+  no_log: true
+
+- name: Check the backup holds a database and is newer than the start of the upgrade
+  vars:
+    jellyfin_upgrade_newest: "{{ jellyfin_upgrade_backups.json | sort(attribute='DateCreated') | last }}"
+  ansible.builtin.assert:
+    that:
+      - jellyfin_upgrade_backups.json | length > 0
+      - jellyfin_upgrade_newest.Options.Database | default(false)
+      - jellyfin_upgrade_newest.DateCreated[:19] >= jellyfin_upgrade_started.stdout[:19]
+    fail_msg: >-
+      The backup that was just taken is not visible to Jellyfin (newest: {{ jellyfin_upgrade_newest.Path | default('none') | basename }},
+      {{ jellyfin_upgrade_newest.DateCreated | default('?') }}). Nothing has been stopped. Look at the backup job's log, then try again.
+    quiet: true
+
+- name: Remember the pre-upgrade backup
+  ansible.builtin.set_fact:
+    jellyfin_upgrade_backup_name: "{{ (jellyfin_upgrade_backups.json | sort(attribute='DateCreated') | last).Path | basename }}"
+
+- name: Uninstall the plugins (10.11 builds do not load on 12; the wanted ones are installed again afterwards)
+  ansible.builtin.uri:
+    url: "{{ jellyfin_api_url }}/Plugins/{{ item.Id }}/{{ item.Version }}"
+    method: DELETE
+    headers:
+      Authorization: 'MediaBrowser Token="{{ jellyfin_api_key }}"'
+    status_code: [204, 404]
+  loop: "{{ jellyfin_up_remove_plugins }}"
+  loop_control:
+    label: "{{ item.Name }} {{ item.Version }}"
+  changed_when: true
+  no_log: true
+
+- name: Stop Jellyfin (scale to zero)
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/jellyfin --replicas=0"
+  changed_when: true
+
+- name: Wait until its pod is gone
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} wait --for=delete pod -l app=jellyfin --timeout=180s"
+  changed_when: false
+
+- name: Copy the config volume on the node (the fast way back)
+  when: jellyfin_upgrade_snapshot | bool
+  block:
+    - name: Find the volume's folder on the node
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          pv=$({{ kubectl_cmd }} -n {{ media_namespace }} get pvc jellyfin-config -o jsonpath='{.spec.volumeName}')
+          {{ kubectl_cmd }} get pv "$pv" -o jsonpath='{.spec.hostPath.path}{.spec.local.path}'
+        executable: /bin/bash
+      register: jellyfin_upgrade_pv_path
+      changed_when: false
+
+    - name: Copy it next to the original (nothing is running, so the copy is consistent)
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          src="{{ jellyfin_upgrade_pv_path.stdout | trim }}"
+          test -d "$src"
+          dst="${src}-pre-upgrade-{{ jellyfin_up_running }}-$(date +%Y%m%d-%H%M%S)"
+          need=$(du -sk "$src" | cut -f1)
+          have=$(df -Pk "$(dirname "$src")" | tail -n1 | tr -s ' ' | cut -d' ' -f4)
+          [ "$have" -gt $((need * 11 / 10)) ] || { echo "not enough room on the node for a copy ($have KiB free, $need needed)" >&2; exit 3; }
+          cp -a "$src" "$dst"
+          echo "$dst"
+        executable: /bin/bash
+      delegate_to: "{{ jellyfin_up_node }}"
+      become: true
+      register: jellyfin_upgrade_snapshot_made
+      changed_when: true
+
+    - name: Remember where it is
+      ansible.builtin.set_fact:
+        jellyfin_upgrade_snapshot_path: "{{ jellyfin_upgrade_snapshot_made.stdout_lines | last }}"
+  rescue:
+    - name: Start the old version again, nothing was changed
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/jellyfin --replicas=1"
+      changed_when: true
+    - name: Say what happened
+      ansible.builtin.fail:
+        msg: >-
+          The copy of the config volume failed (usually: not enough room on the node), so Jellyfin was started again on the old version and
+          NOTHING was upgraded. Free space on the node, or run again with -e jellyfin_upgrade_snapshot=false if you accept relying on the backup
+          zip {{ jellyfin_upgrade_backup_name }} alone. (The plugins were already uninstalled; `make jellyfin-provision` installs the ones listed in jellyfin.yml again.)
+
+- name: Start the new version and wait for the database migration
+  block:
+    - name: Deploy the new image (the rollout waits for Jellyfin to answer; the migration happens before that)
+      ansible.builtin.include_tasks: main.yml
+      vars:
+        jellyfin_upgrade_confirmed: true
+        jellyfin_startup_timeout_seconds: "{{ jellyfin_upgrade_startup_minutes | int * 60 }}"
+        jellyfin_rollout_timeout: "{{ jellyfin_upgrade_startup_minutes | int * 60 + 120 }}s"
+
+    - name: Wait until the new Jellyfin has finished starting (the migration runs before it reports Healthy)
+      ansible.builtin.include_tasks: upgrade_wait.yml
+  rescue:
+    - name: Collect the start-up log
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} logs deploy/jellyfin --tail=60"
+      register: jellyfin_upgrade_log
+      changed_when: false
+      failed_when: false
+
+    - name: Show it
+      ansible.builtin.debug:
+        var: jellyfin_upgrade_log.stdout_lines
+
+    - name: Stop with the way back
+      ansible.builtin.fail:
+        msg: |-
+          The new Jellyfin did not come up cleanly (log above). Do not stop the pod while it may still be migrating:
+          check `kubectl -n {{ media_namespace }} logs deploy/jellyfin -f`. If the log shows it still working, or it ends up Healthy
+          (curl http://<service ip>:8096/health), nothing is wrong: carry on with  make jellyfin-upgrade-finish
+          If it has really failed:
+            fast way back:  make jellyfin-rollback   (restores the copy of the config volume: {{ jellyfin_upgrade_snapshot_path | default('none was made') }})
+            slow way back:  the backup zip {{ jellyfin_upgrade_backup_name }} with a fresh 10.11 server (docs/runbooks/jellyfin-upgrade.md)

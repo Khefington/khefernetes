@@ -5,6 +5,30 @@
     state: directory
     mode: "0755"
 
+- name: Which Jellyfin image runs now? (none on a fresh cluster)
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get deployment jellyfin -o jsonpath={.spec.template.spec.containers[0].image}"
+  register: jellyfin_current_image
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Refuse a major upgrade or a downgrade done by accident
+  vars:
+    jellyfin_current_numbers: "{{ (jellyfin_current_image.stdout | default('')).split(':')[-1] | regex_findall('^[0-9]+[.][0-9]+') | first | default('0.0') }}"
+    jellyfin_target_numbers: "{{ jellyfin_version | string | regex_findall('^[0-9]+[.][0-9]+') | first | default('0.0') }}"
+    jellyfin_current_key: "{{ jellyfin_current_numbers.split('.')[0] | int * 1000 + jellyfin_current_numbers.split('.')[1] | int }}"
+    jellyfin_target_key: "{{ jellyfin_target_numbers.split('.')[0] | int * 1000 + jellyfin_target_numbers.split('.')[1] | int }}"
+  ansible.builtin.assert:
+    that:
+      - jellyfin_current_image.rc != 0 or jellyfin_current_image.stdout | length == 0 or jellyfin_target_key | int >= jellyfin_current_key | int or jellyfin_allow_downgrade | bool
+      - jellyfin_current_image.rc != 0 or jellyfin_current_image.stdout | length == 0 or jellyfin_target_numbers.split('.')[0] == jellyfin_current_numbers.split('.')[0] or jellyfin_upgrade_confirmed | bool
+    quiet: true
+    fail_msg: >-
+      The cluster runs Jellyfin {{ jellyfin_current_numbers }} and the repo asks for {{ jellyfin_target_numbers }} (jellyfin_version: {{ jellyfin_version }}).
+      A major version change rewrites Jellyfin's database and cannot be undone without a restore, and a downgrade cannot run on a migrated database,
+      so neither happens as a side effect of `make jellyfin` / `make site`. Upgrade with `make jellyfin-upgrade-check` then `make jellyfin-upgrade`;
+      go back with `make jellyfin-rollback`; or set jellyfin_version back to what runs now.
+
 - name: Write the Jellyfin manifest
   ansible.builtin.template:
     src: jellyfin.yaml.j2

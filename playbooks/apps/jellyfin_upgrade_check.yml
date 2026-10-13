@@ -1,0 +1,12 @@
+---
+# READ-ONLY: is Jellyfin ready for the major upgrade the repo asks for (jellyfin_version in inventories/group_vars/all/versions.yml)?
+#   make jellyfin-upgrade-check
+# Reports blockers (the upgrade refuses to start while there are any), warnings, which plugins will be removed, and the room left on disk.
+- name: Check that Jellyfin is ready to be upgraded
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Run the checks
+      ansible.builtin.import_role:
+        name: jellyfin
+        tasks_from: upgrade_check.yml

@@ -1,0 +1,41 @@
+---
+# Step 1 of `make jellyfin-upgrade`: check, show the plan, ask, and make sure the new image can be pulled. Nothing is stopped yet.
+- name: Check that Jellyfin is ready to be upgraded
+  ansible.builtin.include_tasks: upgrade_check.yml
+
+- name: Stop if anything blocks the upgrade
+  ansible.builtin.assert:
+    that: jellyfin_up_blockers | length == 0
+    fail_msg: "{{ jellyfin_up_blockers | join(' | ') }}"
+    quiet: true
+
+- name: Ask for confirmation
+  ansible.builtin.pause:
+    prompt: >-
+      This upgrades Jellyfin {{ jellyfin_up_running }} to the image {{ jellyfin_version }}. Jellyfin is OFF while it migrates its database
+      (minutes, longer for a big library). The migration cannot be undone by Jellyfin itself: the way back is the copy of the config volume
+      this playbook makes first (make jellyfin-rollback) or the backup zip it takes first. Plugins are uninstalled and reinstalled.
+      Type UPGRADE to continue
+  register: jellyfin_upgrade_answer
+  when: jellyfin_upgrade_confirm | length == 0
+
+- name: Stop unless the word was typed exactly
+  ansible.builtin.assert:
+    that: (jellyfin_upgrade_confirm if jellyfin_upgrade_confirm | length > 0 else jellyfin_upgrade_answer.user_input) == 'UPGRADE'
+    fail_msg: Nothing was changed.
+    quiet: true
+
+- name: Pull the new image onto the node first (a wrong tag shows up now, not while Jellyfin is off)
+  ansible.builtin.command: >-
+    {{ jellyfin_upgrade_crictl }} --runtime-endpoint {{ jellyfin_upgrade_containerd_socket }}
+    pull docker.io/jellyfin/jellyfin:{{ jellyfin_version }}
+  delegate_to: "{{ jellyfin_up_node }}"
+  become: true
+  register: jellyfin_upgrade_pull
+  changed_when: "'already' not in jellyfin_upgrade_pull.stdout | lower"
+  when: jellyfin_upgrade_pull_image | bool
+
+- name: Remember when the upgrade started (the backup must be newer than this)
+  ansible.builtin.command: date -u +%Y-%m-%dT%H:%M:%SZ
+  register: jellyfin_upgrade_started
+  changed_when: false

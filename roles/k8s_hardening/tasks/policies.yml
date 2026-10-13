@@ -18,8 +18,8 @@
     {{ kubectl_cmd }} -n {{ item.ns }} get pods -o name
     -l {% for k, v in item.labels.items() %}{{ k }}={{ v }}{{ ',' if not loop.last }}{% endfor %}
   loop:
-    - { ns: "{{ k8s_hardening_ingress_namespace }}", labels: "{{ k8s_hardening_ingress_pod_labels[ingress_controller] }}" }
-    - { ns: kube-system, labels: "{{ k8s_hardening_dns_pod_labels }}" }
+    - {ns: "{{ k8s_hardening_ingress_namespace }}", labels: "{{ k8s_hardening_ingress_pod_labels[ingress_controller] }}"}
+    - {ns: kube-system, labels: "{{ k8s_hardening_dns_pod_labels }}"}
   loop_control:
     label: "{{ item.ns }} {{ item.labels }}"
   register: k8s_hardening_selector_check

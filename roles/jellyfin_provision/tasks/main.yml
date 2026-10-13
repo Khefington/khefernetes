@@ -78,7 +78,7 @@
   ansible.builtin.debug:
     msg:
       - "Wizard completed by this run: {{ jellyfin_provision_wizard_ran | default(false) }}"
-      - "Plugins installed by this run: {{ jellyfin_provision_installed_now | default([]) }}"
+      - "Plugins installed / removed by this run: {{ jellyfin_provision_installed_now | default([]) }}"
       - "Plugins now present (pin these versions in group_vars/all/jellyfin.yml): {{ jellyfin_provision_plugins_final | default([]) }}"
       - "Libraries: {{ jellyfin_provision_library_names | default([]) }}"
       - "Users: {{ jellyfin_provision_user_names | default([]) }}"

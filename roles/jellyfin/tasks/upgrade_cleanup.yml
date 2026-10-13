@@ -1,0 +1,64 @@
+---
+# Delete the copies of the config volume that the upgrade (…-pre-upgrade-…) and a rollback (…-failed-…) left on the node.
+- name: Where is the config volume, and on which node?
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      pv=$({{ kubectl_cmd }} -n {{ media_namespace }} get pvc jellyfin-config -o jsonpath='{.spec.volumeName}')
+      {{ kubectl_cmd }} get pv "$pv" -o jsonpath='{.spec.hostPath.path}{.spec.local.path}'; echo
+      {{ kubectl_cmd }} -n {{ media_namespace }} get pod -l app=jellyfin -o jsonpath='{.items[0].spec.nodeName}'; echo
+    executable: /bin/bash
+  register: jellyfin_cl_where
+  changed_when: false
+
+- name: Remember them
+  ansible.builtin.set_fact:
+    jellyfin_cl_path: "{{ jellyfin_cl_where.stdout_lines[0] | trim }}"
+    jellyfin_cl_node: "{{ jellyfin_cl_where.stdout_lines[1] | trim }}"
+
+- name: List the copies (with their size)
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      base="{{ jellyfin_cl_path }}"
+      case "$base" in /?*/?*) ;; *) echo "refusing odd path $base" >&2; exit 2;; esac
+      for d in "$base"-pre-upgrade-* "$base"-failed-*; do
+        [ -d "$d" ] && du -sh "$d"
+      done || true
+    executable: /bin/bash
+  delegate_to: "{{ jellyfin_cl_node }}"
+  become: true
+  register: jellyfin_cl_list
+  changed_when: false
+
+- name: Say what was found
+  ansible.builtin.debug:
+    msg: "{{ jellyfin_cl_list.stdout_lines if jellyfin_cl_list.stdout_lines | length > 0 else ['No copies found: nothing to delete.'] }}"
+
+- name: Ask for confirmation
+  ansible.builtin.pause:
+    prompt: "The folders above are deleted for good (the live config volume is not touched). Type DELETE to continue"
+  register: jellyfin_cleanup_answer
+  when: jellyfin_cl_list.stdout_lines | length > 0 and jellyfin_cleanup_confirm | length == 0
+
+- name: Stop unless the word was typed exactly
+  ansible.builtin.assert:
+    that: (jellyfin_cleanup_confirm if jellyfin_cleanup_confirm | length > 0 else jellyfin_cleanup_answer.user_input) == 'DELETE'
+    fail_msg: Nothing was deleted.
+    quiet: true
+  when: jellyfin_cl_list.stdout_lines | length > 0
+
+- name: Delete them
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      base="{{ jellyfin_cl_path }}"
+      for d in "$base"-pre-upgrade-* "$base"-failed-*; do
+        [ -d "$d" ] && rm -rf -- "$d" && echo "deleted $d"
+      done || true
+    executable: /bin/bash
+  delegate_to: "{{ jellyfin_cl_node }}"
+  become: true
+  register: jellyfin_cl_done
+  changed_when: jellyfin_cl_done.stdout_lines | length > 0
+  when: jellyfin_cl_list.stdout_lines | length > 0

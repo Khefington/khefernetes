@@ -8,6 +8,7 @@ jellyfin_cpu_request: 2000m # reserved on the node; Jellyfin may burst above it 
 jellyfin_memory_request: 2Gi
 jellyfin_memory_limit: 10Gi # wyvern has 16 GiB; leave room for the OS, RKE2 and other pods
 jellyfin_rollout_timeout: 600s
+jellyfin_startup_timeout_seconds: 300 # how long Kubernetes waits for Jellyfin's first answer after a (re)start before it kills the pod
 jellyfin_manifest_path: "{{ k8s_app_manifest_dir }}/jellyfin.yaml"
 # Quick Sync: on automatically when a VM in the inventory has vm_gpu_passthrough: true. The pod then asks for the GPU
 # (gpu.intel.com/i915) and joins the render group. Force it off with -e jellyfin_gpu_enabled=false.
@@ -36,3 +37,18 @@ jellyfin_user_images_types:
   gif: image/gif
   webp: image/webp
   bmp: image/bmp
+
+# Major upgrades (make jellyfin-upgrade-check / jellyfin-upgrade / jellyfin-rollback; roles/jellyfin/tasks/upgrade*.yml)
+jellyfin_upgrade_confirm: "" # -e jellyfin_upgrade_confirm=UPGRADE skips the question (for scripts)
+jellyfin_upgrade_confirmed: false # set by the upgrade playbook only: lets `make jellyfin` change the major version
+jellyfin_allow_downgrade: false # set by the rollback playbook only: lets `make jellyfin` deploy an older version
+jellyfin_upgrade_min_from: "10.10.7" # Jellyfin 12 only upgrades from 10.10.7 or any 10.11.x
+jellyfin_upgrade_startup_minutes: 45 # how long the new version may take to migrate the database before the upgrade gives up waiting
+jellyfin_upgrade_space_factor: 3 # free space needed on the config volume, as a multiple of what Jellyfin uses there now
+jellyfin_upgrade_snapshot: true # copy the config volume (database) on the node before upgrading: the fast way back
+jellyfin_upgrade_pull_image: true # pull the new image onto the node first, so a wrong tag is found before anything is stopped
+jellyfin_upgrade_crictl: /var/lib/rancher/rke2/bin/crictl
+jellyfin_upgrade_containerd_socket: unix:///run/k3s/containerd/containerd.sock
+jellyfin_upgrade_snapshot_dir: "" # rollback: the snapshot folder to use (empty = the newest one)
+jellyfin_rollback_confirm: "" # -e jellyfin_rollback_confirm=ROLLBACK skips the question
+jellyfin_cleanup_confirm: "" # -e jellyfin_cleanup_confirm=DELETE skips the question (make jellyfin-upgrade-cleanup)
