@@ -1,0 +1,11 @@
+# Managed by Ansible (khefernetes, role ddns).
+[Unit]
+Description=khefernetes dynamic DNS update, every {{ ddns_interval_minutes }} minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ ddns_interval_minutes }}min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+# Managed by Ansible (khefernetes, role ddns).
+[Unit]
+Description=khefernetes dynamic DNS update ({{ ddns_duckdns_subdomain }}.duckdns.org)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ ddns_script_path }}
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

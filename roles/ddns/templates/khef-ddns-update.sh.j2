@@ -1,0 +1,19 @@
+#!/bin/bash
+# Managed by Ansible (khefernetes, role ddns). Tells DuckDNS what this home's public IPv4 address is.
+# Run by khef-ddns.timer every {{ ddns_interval_minutes }} minutes. By hand:  sudo {{ ddns_script_path }}
+set -euo pipefail
+set -a
+# shellcheck disable=SC1091
+. "{{ ddns_env_file }}"
+set +a
+# -4: DuckDNS records the address the request comes from, and the VPN port forward is IPv4. The token goes to curl on stdin,
+# not on the command line, so it does not show up in the process list.
+answer=$(printf 'url = "https://www.duckdns.org/update?domains=%s&token=%s&ip=&verbose=true"\n' "$DUCKDNS_SUBDOMAIN" "$DUCKDNS_TOKEN" \
+  | curl -4 -sS --max-time 30 -K -)
+first=$(printf '%s\n' "$answer" | head -n1)
+summary=$(printf '%s' "$answer" | tr '\n' ' ')
+if [ "$first" != "OK" ]; then
+  echo "khef-ddns: DuckDNS refused the update for ${DUCKDNS_SUBDOMAIN}.duckdns.org (answer: ${summary:-nothing}). Wrong token or subdomain?" >&2
+  exit 1
+fi
+echo "khef-ddns: ${DUCKDNS_SUBDOMAIN}.duckdns.org -> ${summary}"

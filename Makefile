@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -116,3 +116,7 @@ wireguard-client: ## VPN: print one device's config + QR code, e.g. make wiregua
 	$(PLAYBOOK) playbooks/hardening/wireguard_client.yml -e wireguard_client_peer=$(PEER)
 wireguard-off: ## Emergency: stop the VPN on castellan (devices lose access; the LAN is unaffected)
 	ansible proxmox -b -m ansible.builtin.systemd_service -a "name=wg-quick@wg0 state=stopped enabled=false"
+ddns: ## VPN: keep a DuckDNS name pointed at your home IP (timer on castellan; needs the name + vault_duckdns_token)
+	$(PLAYBOOK) playbooks/hardening/ddns.yml
+ddns-status: ## VPN: show when the DuckDNS name was last updated
+	ansible proxmox -b -m ansible.builtin.command -a "journalctl -u khef-ddns -n 5 --no-pager"

@@ -9,8 +9,9 @@ wireguard_subnet: 10.8.0.0/24 # the VPN's own private network (not your LAN)
 wireguard_server_ip: 10.8.0.1 # castellan inside the VPN; also the DNS server the clients use (jellyfin.home.lan -> ingress)
 
 # How clients find your home: a fixed public IP or, better, a DDNS name (home addresses change). Only used to write client
-# files (`make wireguard-client PEER=phone`). Left empty, the current public address is looked up from castellan each time.
-wireguard_endpoint: ""
+# files (`make wireguard-client PEER=phone`). With DuckDNS set up (ddns.yml) it is that name automatically. Left empty,
+# the current public address is looked up from castellan each time.
+wireguard_endpoint: "{{ ddns_duckdns_subdomain ~ '.duckdns.org' if (ddns_duckdns_subdomain | default('')) | length > 0 else '' }}"
 
 # One entry per device. Add a device = add a line, `make wireguard`, `make wireguard-client PEER=<name>`.
 #   name:   letters, digits, dash. Also the file name of its keys on castellan.

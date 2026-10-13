@@ -1,0 +1,96 @@
+---
+# Dynamic DNS for the VPN endpoint (DuckDNS). One-off, by hand: make a free account at duckdns.org, create a name, copy the token
+# into the vault as vault_duckdns_token, and put the name in inventories/group_vars/all/ddns.yml.
+- name: Stop if the DuckDNS settings are missing or look wrong
+  ansible.builtin.assert:
+    that:
+      - ddns_duckdns_subdomain is match('^[a-z0-9][a-z0-9-]{0,62}$')
+      - ddns_duckdns_token | length > 0
+      - ddns_duckdns_token is match('^[A-Za-z0-9-]+$')
+    fail_msg: >-
+      Needs ddns_duckdns_subdomain (lowercase letters, digits, dashes: for khef-home.duckdns.org write khef-home) in
+      inventories/group_vars/all/ddns.yml and vault_duckdns_token in the vault (ansible-vault edit inventories/group_vars/all/vault.yml).
+      Steps: docs/runbooks/hardening.md, "A home address that changes".
+  tags: [always]
+
+- name: Install curl and dig
+  ansible.builtin.apt:
+    name:
+      - curl
+      - bind9-dnsutils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags: [install]
+
+- name: Folder for the token file
+  ansible.builtin.file:
+    path: "{{ ddns_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: The token file (root only)
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible (khefernetes, role ddns). Contains the DuckDNS token.
+      DUCKDNS_SUBDOMAIN="{{ ddns_duckdns_subdomain }}"
+      DUCKDNS_TOKEN="{{ ddns_duckdns_token }}"
+    dest: "{{ ddns_env_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: The update script
+  ansible.builtin.template:
+    src: khef-ddns-update.sh.j2
+    dest: "{{ ddns_script_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: The systemd service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ ddns_unit_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - khef-ddns.service
+    - khef-ddns.timer
+
+- name: Start the timer now and at every boot
+  ansible.builtin.systemd_service:
+    name: khef-ddns.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Update DuckDNS once now
+  ansible.builtin.command: "{{ ddns_script_path }}"
+  register: ddns_first
+  changed_when: "'UPDATED' in ddns_first.stdout"
+  when: ddns_run_now | bool
+
+- name: What DuckDNS answered
+  ansible.builtin.debug:
+    msg: "{{ ddns_first.stdout }}"
+  when: ddns_run_now | bool
+
+- name: Does the name now resolve to that address? (asked at DuckDNS's own server)
+  ansible.builtin.command: "dig +short +time=3 +tries=2 @ns1.duckdns.org {{ ddns_duckdns_subdomain }}.duckdns.org A"
+  register: ddns_dig
+  changed_when: false
+  until: ddns_first.stdout.split() | select('equalto', ddns_dig.stdout | trim) | list | length > 0
+  retries: 6
+  delay: 5
+  when: ddns_run_now | bool
+
+- name: Done
+  ansible.builtin.debug:
+    msg:
+      - "{{ ddns_duckdns_subdomain }}.duckdns.org points at your home address and is refreshed every {{ ddns_interval_minutes }} minutes."
+      - "The VPN now uses it automatically: re-issue a device with  make wireguard-client PEER=<name>  or, on a phone you already set up,"
+      - "change the Endpoint in the WireGuard app to {{ ddns_duckdns_subdomain }}.duckdns.org:{{ wireguard_port | default(51820) }}."
+      - "Recent updates:  make ddns-status"

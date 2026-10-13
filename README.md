@@ -27,7 +27,7 @@ make site                                   # the whole build, in order
 | Are users' profile pictures linked? / re-attach them | `make jellyfin-profile-check` (read-only), `make jellyfin-profile-fix` |
 | Cluster hardening (pod security + network policies): plan / apply / off | `make cluster-hardening`, `make cluster-hardening-apply`, `make cluster-hardening-off` |
 | Host firewall plan / apply / emergency off | `make host-firewall`, `make host-firewall-apply`, `make host-firewall-off` (details: `docs/runbooks/hardening.md`) |
-| VPN (WireGuard on castellan): server / one device's config + QR / emergency off | `make wireguard`, `make wireguard-client PEER=phone`, `make wireguard-off` (details: `docs/runbooks/hardening.md`, stage 4) |
+| VPN (WireGuard on castellan): server / one device's config + QR / emergency off | `make wireguard`, `make wireguard-client PEER=phone`, `make wireguard-off`; changing home IP: `make ddns`, `make ddns-status` (details: `docs/runbooks/hardening.md`, stage 4) |
 | Security audit (read-only) / hardening plan | `make security-audit`, `docs/runbooks/hardening.md` |
 | Look inside a Jellyfin backup zip | `python3 scripts/inspect-jellyfin-backup.py <zip>` |
 | Make `jellyfin.home.lan` work on every device | `make dns`, then set the router DNS to castellan (`docs/runbooks/dns.md`) |

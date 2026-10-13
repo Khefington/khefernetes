@@ -8,3 +8,4 @@ vault_rke2_token: "changeme-long-random-string"
 vault_jellyfin_khef_password: "changeme"
 vault_opensubtitles_username: "changeme"
 vault_opensubtitles_password: "changeme"
+vault_duckdns_token: "changeme"   # only if you use the DuckDNS updater (make ddns)

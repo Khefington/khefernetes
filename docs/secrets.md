@@ -10,6 +10,7 @@ The vault password is in `.vault_pass` (git-ignored). Names are listed in `docs/
 | `vault_rke2_token` | RKE2 node join token |
 | `vault_jellyfin_khef_password` | Password of the `Khef` Jellyfin admin (set when the account is created; also used to log in) |
 | `vault_opensubtitles_username`, `vault_opensubtitles_password` | OpenSubtitles account used by the Jellyfin plugin |
+| `vault_duckdns_token` | DuckDNS token for the dynamic-DNS updater (`make ddns`); stored on castellan in a root-only file |
 
 The Jellyfin API key (backups, rescans) is no longer a vault secret: `make jellyfin-provision` creates it and stores it in the cluster as the Secret `jellyfin-api`.
 

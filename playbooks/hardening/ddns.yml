@@ -1,0 +1,10 @@
+---
+# Keep a DuckDNS name pointed at your home's public IP address, so the VPN endpoint survives an address change.
+#   make ddns
+# Needs ddns_duckdns_subdomain (inventories/group_vars/all/ddns.yml) and vault_duckdns_token (vault). See docs/runbooks/hardening.md.
+- name: Dynamic DNS on castellan
+  hosts: proxmox
+  gather_facts: false
+  become: true
+  roles:
+    - ddns

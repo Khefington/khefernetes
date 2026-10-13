@@ -108,7 +108,7 @@ Mechanically: the firewall's `forward` chain only looks at traffic from or to `w
 1. `make host-firewall-apply` (opens UDP 51820 and adds the VPN filtering; the usual timed rollback applies).
 2. `make wireguard`. Installs WireGuard, makes the server key and one key + preshared key per device **on castellan** (`/etc/wireguard`, root only; nothing secret goes into the repo) and starts the tunnel.
 3. **By hand, once:** in the Google Fiber app, forward **UDP 51820** to castellan (`192.168.1.50`). (This is the one mapping to allow; UPnP can stay on for your PC.)
-4. Decide how devices find your home: a fixed address, or better a DDNS name; put it in `wireguard_endpoint`. If you leave it empty, `make wireguard-client` looks up your current public address and uses it, which breaks when the provider changes it.
+4. Decide how devices find your home: a DDNS name (see "A home address that changes" below; recommended), a fixed address in `wireguard_endpoint`, or nothing. If you leave both empty, `make wireguard-client` looks up your current public address and uses it, which breaks when the provider changes it.
 5. `make wireguard-client PEER=phone`: prints the device's file and a QR code. In the WireGuard app: **+ > Scan from QR code**. Press Enter, clear the terminal (the output contains the device's private key).
 6. Turn Wi-Fi off on the phone and open `http://jellyfin.home.lan` in the Jellyfin app (server address) or the browser. It works if the tunnel is up and the sign-in page loads.
 
@@ -125,3 +125,17 @@ Mechanically: the firewall's `forward` chain only looks at traffic from or to `w
 - Plain HTTP over the tunnel (already encrypted), but anyone who gets *into* the tunnel as a `lan` device can reach the whole LAN: give `lan` only to your own machines.
 - The home public address must be reachable: carrier-grade NAT or an ISP that blocks inbound UDP would break the port forward (Tailscale is the fallback).
 - Google Fiber's router may reset a port forward after a router reset or firmware change; if the phone stops connecting from outside, check the forward first.
+
+### A home address that changes: DuckDNS
+Your phone's file names where to connect. A name that always points at your current home address keeps it working when Google Fiber changes the address.
+**By hand, once:** sign in at <https://www.duckdns.org> (it uses a Google/GitHub/etc. login), create a name (for example `khef-home`), and copy the token from the top of the page.
+1. `ansible-vault edit inventories/group_vars/all/vault.yml` and add `vault_duckdns_token: "<the token>"`.
+2. In `inventories/group_vars/all/ddns.yml` set `ddns_duckdns_subdomain: khef-home` (just the first part).
+3. `make ddns`. It puts the token in a root-only file on castellan, installs a systemd timer that tells DuckDNS your current IPv4 address every 5 minutes (and 2 minutes after a boot), updates once right away and checks that `khef-home.duckdns.org` now resolves to that address.
+4. `wireguard_endpoint` becomes `khef-home.duckdns.org` by itself. A phone you already set up: open the tunnel in the WireGuard app > Edit > Peer > Endpoint > `khef-home.duckdns.org:51820` (or re-issue it with `make wireguard-client PEER=phone`).
+`make ddns-status` shows the last updates. Wrong token or name: the update fails with a clear message in that log (`DuckDNS refused the update`).
+Notes:
+- The name publishes your home IP address in DNS. Anything you connect to already sees that address, and the only thing listening there is the silent WireGuard port, so this adds little. Do not point DuckDNS at services you have not hardened.
+- The WireGuard apps look the name up each time the tunnel is switched on. After an address change, switch the tunnel off and on once.
+- The updater only reports IPv4 (`curl -4`): the port forward is IPv4. IPv6-only mobile networks still reach an IPv4 address through the carrier's translation.
+- The token is a secret: in the vault, and on castellan only in `/etc/khefernetes/ddns.env` (mode 0600). It is passed to curl on stdin so it does not appear in the process list.

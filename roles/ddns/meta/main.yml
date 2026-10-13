@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: ddns
+  author: khefernetes
+  description: "Keeps a DuckDNS name pointed at the home's public IP address (systemd timer on the Proxmox host)"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []
