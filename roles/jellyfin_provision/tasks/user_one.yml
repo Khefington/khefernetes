@@ -34,7 +34,10 @@
       {{ jellyfin_provision_account.Policy
          | combine({'IsAdministrator': user.admin | default(false) | bool,
                     'EnableAllFolders': (user.libraries | default('all')) == 'all',
-                    'EnabledFolders': jellyfin_provision_visible}) }}
+                    'EnabledFolders': jellyfin_provision_visible,
+                    'IsDisabled': false,
+                    'InvalidLoginAttemptCount': 0,
+                    'LoginAttemptsBeforeLockout': user.lockout_attempts | default(jellyfin_user_lockout_attempts) | int}) }}
 
 - name: Apply the policy if it differs
   ansible.builtin.uri:

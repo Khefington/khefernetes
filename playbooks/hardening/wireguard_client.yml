@@ -1,0 +1,11 @@
+---
+# Print one VPN device's config and QR code:  make wireguard-client PEER=phone
+- name: Show a VPN device's configuration
+  hosts: proxmox
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Make the file and QR code
+      ansible.builtin.include_role:
+        name: wireguard
+        tasks_from: client.yml

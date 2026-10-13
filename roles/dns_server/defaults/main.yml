@@ -1,6 +1,9 @@
 ---
 # Address dnsmasq listens on: castellan's own LAN address, and nothing else.
 dns_server_listen_address: "{{ ansible_host }}"
+# More addresses to answer on. With WireGuard enabled: castellan's address inside the VPN, so phones away from home can resolve
+# jellyfin.home.lan. dnsmasq may start before the tunnel exists (bind-dynamic picks the address up when it appears).
+dns_server_extra_listen_addresses: "{{ [wireguard_server_ip] if (wireguard_enabled | default(false) | bool) else [] }}"
 # Every name under this domain (jellyfin.home.lan, anything.home.lan) answers with the ingress address.
 dns_server_domain: "{{ lan_domain }}"
 dns_server_wildcard_address: "{{ ingress_vip }}"

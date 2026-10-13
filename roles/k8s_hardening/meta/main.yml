@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: k8s_hardening
+  author: khefernetes
+  description: "Pod-security labels on the namespaces and NetworkPolicies for the media namespace, applied with live probes and an automatic rollback"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

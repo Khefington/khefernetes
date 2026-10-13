@@ -1,0 +1,20 @@
+---
+# Cluster hardening, stage 1: pod-security labels on the namespaces, NetworkPolicies for the media namespace.
+# Default (k8s_hardening_apply=false): nothing is changed; the API server is asked what it WOULD say (dry run).
+# With k8s_hardening_apply=true: label, apply the policies, probe from the inside and the outside, roll the policies back if a critical probe fails.
+# With k8s_hardening_remove=true: delete the NetworkPolicies again.
+- name: Remove the NetworkPolicies
+  ansible.builtin.command: "{{ kubectl_cmd }} delete -f {{ k8s_hardening_manifest_path }} --ignore-not-found"
+  register: k8s_hardening_removed
+  changed_when: "'deleted' in k8s_hardening_removed.stdout"
+  when: k8s_hardening_remove | bool
+
+- name: Stop after removing
+  ansible.builtin.meta: end_host
+  when: k8s_hardening_remove | bool
+
+- name: Pod-security labels
+  ansible.builtin.include_tasks: namespaces.yml
+
+- name: Network policies
+  ansible.builtin.include_tasks: policies.yml

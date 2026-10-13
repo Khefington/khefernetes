@@ -1,0 +1,28 @@
+---
+# The real values (port, subnet, peers) live in inventories/group_vars/all/wireguard.yml; these are safe fallbacks.
+wireguard_enabled: true
+wireguard_interface: wg0
+wireguard_port: 51820
+wireguard_subnet: 10.8.0.0/24
+wireguard_server_ip: 10.8.0.1
+wireguard_endpoint: ""
+wireguard_peers: []
+
+wireguard_dir: /etc/wireguard
+wireguard_peer_dir: "{{ wireguard_dir }}/peers"
+wireguard_use_preshared_keys: true # an extra shared secret per peer (protects the tunnel even against a future break of the public-key maths)
+wireguard_client_keepalive: 25 # seconds; keeps the phone's path through the router open
+# How a client reaches the VPN server's public address when wireguard_endpoint is empty (looked up from castellan).
+wireguard_public_ip_url: https://api.ipify.org
+# What a client sends through the tunnel, per access level (everything else keeps using its normal connection).
+wireguard_client_routes:
+  jellyfin: ["{{ ingress_vip }}/32", "{{ wireguard_server_ip }}/32"]
+  lan: ["{{ lan_subnet_cidr }}", "{{ wireguard_server_ip }}/32"]
+
+# Small script run on castellan: every address given after the network must be inside it (prints the ones that are not).
+wireguard_address_check: |
+  import ipaddress, sys
+  net = ipaddress.ip_network(sys.argv[1])
+  bad = [a for a in sys.argv[2:] if ipaddress.ip_address(a) not in net]
+  print(bad)
+  sys.exit(1 if bad else 0)

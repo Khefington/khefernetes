@@ -21,3 +21,15 @@ host_firewall_k8s_api_from_admin: false # true = let your PC (admin cidrs) use k
 
 # Extra TCP ports to open to the admin addresses only.
 host_firewall_extra_admin_tcp_ports: []
+
+# WireGuard on castellan (role wireguard). When enabled the castellan rules also: accept the WireGuard handshake from anywhere,
+# let VPN peers use castellan's DNS, and filter what VPN peers may reach through castellan (forward + NAT). Peers with
+# access "jellyfin" reach only the ingress address on 80/443; peers with access "lan" reach the LAN like a device at home.
+host_firewall_wireguard: "{{ wireguard_enabled | default(false) }}"
+host_firewall_wg_interface: "{{ wireguard_interface | default('wg0') }}"
+host_firewall_wg_port: "{{ wireguard_port | default(51820) }}"
+host_firewall_wg_subnet: "{{ wireguard_subnet | default('10.8.0.0/24') }}"
+host_firewall_wg_peers: "{{ wireguard_peers | default([]) }}"
+host_firewall_wg_jellyfin_ports: [80, 443] # what "jellyfin" peers may use on the ingress address
+host_firewall_ingress_ip: "{{ ingress_vip }}"
+host_firewall_lan_cidr: "{{ lan_subnet_cidr }}"

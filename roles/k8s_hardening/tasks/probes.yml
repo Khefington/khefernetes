@@ -1,0 +1,109 @@
+---
+# Proof, from the real cluster, that the policies let the right things through (critical) and stop the wrong ones (reported).
+- name: Where is Jellyfin inside the cluster?
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get svc jellyfin -o jsonpath={.spec.clusterIP}"
+  register: k8s_hardening_svc
+  changed_when: false
+  check_mode: false
+
+- name: "CRITICAL 1/4 - the web through the ingress address still works (what your browser and Ansible use)"
+  ansible.builtin.uri:
+    url: "{{ k8s_hardening_vip_url }}{{ k8s_hardening_probe_url }}"
+    headers:
+      Host: "{{ k8s_hardening_jellyfin_hostname }}"
+    use_proxy: false
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: k8s_hardening_p_vip
+  until: k8s_hardening_p_vip.status == 200
+  retries: 6
+  delay: 5
+  changed_when: false
+  check_mode: false
+
+- name: "CRITICAL 2/4 - the control plane can still reach Jellyfin directly (restore, profile-fix, audit)"
+  ansible.builtin.uri:
+    url: "http://{{ k8s_hardening_svc.stdout }}:8096{{ k8s_hardening_probe_url }}"
+    use_proxy: false
+    status_code: 200
+  register: k8s_hardening_p_node
+  until: k8s_hardening_p_node.status == 200
+  retries: 6
+  delay: 5
+  changed_when: false
+  check_mode: false
+
+- name: "CRITICAL 3/4 - Jellyfin can still reach the internet (names resolve, metadata and plugin servers answer)"
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin --
+    curl -sS -m 15 -o /dev/null -w "%{http_code}" https://example.com/
+  register: k8s_hardening_p_net
+  changed_when: false
+  check_mode: false
+
+- name: "CRITICAL 4/4 - the backup job's path to Jellyfin works"
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} run khef-probe-backup-{{ lookup('ansible.builtin.pipe', 'date +%s') }}
+    --rm -i --restart=Never --labels=app=jellyfin-backup --image={{ k8s_hardening_probe_image }} --image-pull-policy=IfNotPresent
+    --command -- curl -sS -m 10 -o /dev/null -w "%{http_code}" http://jellyfin.{{ media_namespace }}.svc.cluster.local:8096{{ k8s_hardening_probe_url }}
+  register: k8s_hardening_p_backup
+  changed_when: false
+  check_mode: false
+  failed_when: false
+
+- name: Check the critical ones
+  ansible.builtin.assert:
+    that:
+      - k8s_hardening_p_net.rc == 0 and (k8s_hardening_p_net.stdout | trim) not in ['', '000']
+      - "'200' in k8s_hardening_p_backup.stdout"
+    fail_msg: >-
+      Jellyfin's internet access answered '{{ k8s_hardening_p_net.stdout | default('') }}' (expected an HTTP code) and the backup path answered
+      '{{ k8s_hardening_p_backup.stdout | default('') }}' (expected 200).
+    quiet: true
+
+# Informational: things that must now be BLOCKED. A '000' means the connection timed out or was refused (blocked).
+- name: Can Jellyfin reach your LAN? (it must not)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} exec deploy/jellyfin --
+    curl -sk -m 6 -o /dev/null -w "%{http_code}" {{ item }}
+  loop: "{{ k8s_hardening_probe_lan_targets }}"
+  register: k8s_hardening_p_lan
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Can an unrelated pod (another namespace) reach Jellyfin? (it must not)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n default run khef-probe-other-{{ lookup('ansible.builtin.pipe', 'date +%s') }}
+    --rm -i --restart=Never --image={{ k8s_hardening_probe_image }} --image-pull-policy=IfNotPresent
+    --command -- curl -sS -m 8 -o /dev/null -w "%{http_code}" http://jellyfin.{{ media_namespace }}.svc.cluster.local:8096{{ k8s_hardening_probe_url }}
+  register: k8s_hardening_p_other
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Result of the critical checks
+  ansible.builtin.debug:
+    msg:
+      - "[OK] the web through the ingress address: {{ k8s_hardening_p_vip.status }}"
+      - "[OK] control plane to Jellyfin directly: {{ k8s_hardening_p_node.status }}"
+      - "[OK] Jellyfin to the internet: HTTP {{ k8s_hardening_p_net.stdout | trim }}"
+      - "[OK] backup job to Jellyfin: 200"
+
+- name: Result - Jellyfin and your LAN
+  ansible.builtin.debug:
+    msg: >-
+      {{ '[OK]   Jellyfin cannot reach ' ~ item.item
+         if (item.stdout | default('') | trim) in ['', '000']
+         else '[WARN] Jellyfin CAN reach ' ~ item.item ~ ' (HTTP ' ~ item.stdout ~ '): the egress policy is not being enforced' }}
+  loop: "{{ k8s_hardening_p_lan.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Result - other pods and Jellyfin
+  ansible.builtin.debug:
+    msg: >-
+      {{ '[OK]   a pod in another namespace cannot reach Jellyfin'
+         if '200' not in k8s_hardening_p_other.stdout
+         else '[WARN] a pod in another namespace CAN reach Jellyfin: the ingress policy is not being enforced' }}

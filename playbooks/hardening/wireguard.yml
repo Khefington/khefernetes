@@ -1,0 +1,16 @@
+---
+# The VPN: a WireGuard server on castellan, the only way in from outside the house.
+#   make wireguard                        installs/updates the server, makes any missing keys, adds devices
+#   make wireguard-client PEER=phone      prints that device's config + QR code
+# Needs: make host-firewall-apply (it opens the UDP port and filters what VPN devices can reach) and, once,
+# a port forward of UDP 51820 to castellan in the Google Fiber app. See docs/runbooks/hardening.md.
+- name: WireGuard server on castellan
+  hosts: proxmox
+  gather_facts: false
+  become: true
+  roles:
+    - role: wireguard
+      when: wireguard_enabled | bool
+    # The DNS server must also answer on the VPN address (bind-dynamic, so the order does not matter).
+    - role: dns_server
+      when: wireguard_enabled | bool

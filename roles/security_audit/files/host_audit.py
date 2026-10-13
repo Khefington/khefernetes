@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 COUNTS = {"OK": 0, "INFO": 0, "WARN": 0}
 
@@ -107,12 +108,26 @@ def rpc_ports():
     return found
 
 
+def wireguard_ports():
+    """UDP ports of running WireGuard tunnels (the kernel owns the socket, so `ss` shows no process)."""
+    if not shutil.which("wg"):
+        return {}
+    rc, out = run(["wg", "show", "all", "listen-port"])
+    found = {}
+    for line in out.splitlines():
+        f = line.split()
+        if rc == 0 and len(f) == 2 and f[1].isdigit():
+            found["udp/%s" % f[1]] = "WireGuard VPN %s (kernel)" % f[0]
+    return found
+
+
 def check_listeners():
     rows = parse_ss()
     if not rows:
         emit("INFO", "listeners", "could not read the socket list (is `ss` installed and are you root?)")
         return
     rpc = rpc_ports()
+    wgp = wireguard_ports()
     groups = {}
     local_only = 0
     for r in rows:
@@ -122,7 +137,7 @@ def check_listeners():
         proc, port = r["proc"], r["port"]
         what = next((v for k, v in KNOWN_LISTENERS.items() if proc.startswith(k)), None)
         if what is None and proc == "?":
-            what = KNOWN_PORTS.get("%s/%s" % (r["proto"], port)) or KNOWN_PORTS.get(port) or rpc.get(port)
+            what = KNOWN_PORTS.get("%s/%s" % (r["proto"], port)) or KNOWN_PORTS.get(port) or rpc.get(port) or wgp.get("%s/%s" % (r["proto"], port))
         label = proc if proc != "?" else "kernel"
         g = groups.setdefault((label, what), {"ports": set(), "addrs": set()})
         g["ports"].add("%s/%s" % (r["proto"], port))
@@ -350,6 +365,42 @@ def check_proxmox():
 # --------------------------------------------------------------------------------------------------
 # 7. RKE2 specifics (on cluster VMs)
 # --------------------------------------------------------------------------------------------------
+def check_wireguard():
+    if not shutil.which("wg"):
+        return
+    rc, out = run(["wg", "show", "interfaces"])
+    ifaces = out.split() if rc == 0 else []
+    if not ifaces:
+        emit("INFO", "vpn", "WireGuard is installed but no tunnel is up")
+        return
+    now = time.time()
+    for ifc in ifaces:
+        rc, out = run(["wg", "show", ifc, "latest-handshakes"])
+        stamps = [int(ln.split()[1]) for ln in out.splitlines() if len(ln.split()) == 2 and ln.split()[1].isdigit()] if rc == 0 else []
+        seen = [s for s in stamps if s > 0]
+        last = ("; the most recent connection was %d hours ago" % ((now - max(seen)) // 3600)) if seen else ""
+        emit("INFO", "vpn", "%s is up with %d device(s), %d have connected at least once since it started%s" % (ifc, len(stamps), len(seen), last))
+        # Without the host firewall nothing limits what a connected device can reach through this machine.
+        rc, fw = run(["nft", "list", "chain", "inet", "khef_filter", "forward"]) if shutil.which("nft") else (1, "")
+        if rc == 0 and ('iifname "%s"' % ifc) in fw and "drop" in fw:
+            emit("OK", "vpn", "the firewall limits what devices on %s can reach (forward chain)" % ifc)
+        else:
+            emit("WARN", "vpn", "%s is up but the khefernetes firewall rules that limit what VPN devices can reach are not loaded: run make host-firewall-apply" % ifc)
+    bad = []
+    for root, _dirs, files in os.walk("/etc/wireguard"):
+        for name in files + [""]:
+            path = os.path.join(root, name) if name else root
+            try:
+                if os.stat(path).st_mode & 0o077:
+                    bad.append(path)
+            except OSError:
+                pass
+    if bad:
+        emit("WARN", "vpn", "WireGuard key files are readable by other users: %s" % ", ".join(bad[:4]))
+    elif os.path.isdir("/etc/wireguard"):
+        emit("OK", "vpn", "WireGuard keys are private (root only)")
+
+
 def check_rke2():
     cfg_path = "/etc/rancher/rke2/config.yaml"
     if not os.path.exists(cfg_path):
@@ -388,6 +439,7 @@ def main():
     check_accounts()
     if kind == "proxmox":
         check_proxmox()
+        check_wireguard()
     else:
         check_rke2()
     print("SUMMARY %s: %d warnings, %d to know about, %d already good" % (os.uname()[1], COUNTS["WARN"], COUNTS["INFO"], COUNTS["OK"]))

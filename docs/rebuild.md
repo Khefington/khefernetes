@@ -78,6 +78,13 @@ If you do **not** need the old watch history, skip step 1 and 2: the provisioned
 - A video plays, and scrubbing shows thumbnails (trickplay).
 - If you want to practice a real etcd restore as well, do it now, before relying on the snapshots: `docs/runbooks/etcd-restore.md`.
 
+## 6. Hardening after a rebuild
+The VMs are new, so their firewall and the cluster's policies are new too; castellan was not rebuilt, so its firewall and the VPN are still in place (the keys live on castellan).
+1. `make host-firewall-apply` (VMs get their firewall; castellan's is unchanged and is skipped).
+2. `make cluster-hardening-apply` (pod-security labels and the `media` NetworkPolicies, with live proofs).
+3. `make security-audit`, and compare with the previous run.
+4. `make wireguard` only if castellan itself was reinstalled (then re-issue every device with `make wireguard-client PEER=<name>`). Otherwise phones keep working: check one from outside the house.
+
 ## If something goes wrong
 - **Any step 3 command fails:** read the message, fix, and re-run that same command. Every stage is safe to re-run.
 - **Traefik misbehaves** (this is the first time that branch runs for real): set `ingress_controller: ingress-nginx` in `inventories/group_vars/anvil_cluster/kubernetes.yml`, then `make destroy-vms` and rebuild again. Switching a running cluster is a longer procedure, so a clean rebuild is quicker. Tell me what you saw and we will fix the Traefik branch.

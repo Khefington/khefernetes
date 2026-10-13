@@ -1,0 +1,45 @@
+---
+# Make a private key at wireguard_key_path if it is not there yet (a preshared key if wireguard_key_preshared), read it back,
+# and work out the public key. Keys are only ever in root-only files on castellan and in memory.
+- name: Is there a key already? ({{ wireguard_key_name }})
+  ansible.builtin.stat:
+    path: "{{ wireguard_key_path }}"
+  register: wireguard_key_stat
+
+- name: Make the key ({{ wireguard_key_name }})
+  ansible.builtin.command: "{{ 'wg genpsk' if wireguard_key_preshared else 'wg genkey' }}"
+  register: wireguard_key_new
+  changed_when: true
+  no_log: true
+  when: not wireguard_key_stat.stat.exists
+
+- name: Save it, readable by root only ({{ wireguard_key_name }})
+  ansible.builtin.copy:
+    content: "{{ wireguard_key_new.stdout }}\n"
+    dest: "{{ wireguard_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: not wireguard_key_stat.stat.exists
+
+- name: Read the key back ({{ wireguard_key_name }})
+  ansible.builtin.slurp:
+    src: "{{ wireguard_key_path }}"
+  register: wireguard_key_file
+  no_log: true
+
+- name: Work out the public key ({{ wireguard_key_name }})
+  ansible.builtin.command: wg pubkey
+  args:
+    stdin: "{{ wireguard_key_file.content | b64decode | trim }}"
+  register: wireguard_key_pub
+  changed_when: false
+  no_log: true
+  when: not wireguard_key_preshared
+
+- name: Hand the key to the caller ({{ wireguard_key_name }})
+  ansible.builtin.set_fact:
+    wireguard_key_private: "{{ wireguard_key_file.content | b64decode | trim }}"
+    wireguard_key_public: "{{ wireguard_key_pub.stdout | default('') | trim }}"
+  no_log: true

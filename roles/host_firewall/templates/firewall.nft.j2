@@ -4,6 +4,11 @@
 {% set admin = host_firewall_admin_cidrs | join(', ') %}
 {% set nodes = host_firewall_node_ips | join(', ') %}
 {% set is_pve = inventory_hostname in groups['proxmox'] %}
+{% set wg = is_pve and host_firewall_wireguard | bool %}
+{% set wg_if = host_firewall_wg_interface %}
+{% set wg_all = host_firewall_wg_peers | map(attribute='ip') | list %}
+{% set wg_lan = host_firewall_wg_peers | selectattr('access', 'equalto', 'lan') | map(attribute='ip') | list %}
+{% set wg_jf = host_firewall_wg_peers | selectattr('access', 'equalto', 'jellyfin') | map(attribute='ip') | list %}
 table inet {{ host_firewall_table }}
 delete table inet {{ host_firewall_table }}
 
@@ -34,6 +39,18 @@ table inet {{ host_firewall_table }} {
 {% elif host_firewall_k8s_api_from_admin and inventory_hostname in groups['anvil_control_planes'] %}
     ip saddr { {{ admin }} } tcp dport 6443 accept             # kubectl from your PC
 {% endif %}
+{% if wg %}
+
+    # WireGuard: the handshake may come from anywhere (a packet without a valid key is silently ignored), the tunnel
+    # peers may use castellan's DNS, and "lan" peers may administer castellan like a PC at home.
+    udp dport {{ host_firewall_wg_port }} accept
+{% if wg_all | length > 0 %}
+    iifname "{{ wg_if }}" ip saddr { {{ wg_all | join(', ') }} } meta l4proto { tcp, udp } th dport 53 accept
+{% endif %}
+{% if wg_lan | length > 0 %}
+    iifname "{{ wg_if }}" ip saddr { {{ wg_lan | join(', ') }} } tcp dport { 22, 8006, 3128 } accept
+{% endif %}
+{% endif %}
 {% if host_firewall_extra_admin_tcp_ports | length > 0 %}
     ip saddr { {{ admin }} } tcp dport { {{ host_firewall_extra_admin_tcp_ports | join(', ') }} } accept
 {% endif %}
@@ -42,4 +59,34 @@ table inet {{ host_firewall_table }} {
     limit rate 6/minute log prefix "khef-fw: " level info
     counter drop
   }
+{% if wg %}
+
+  # Traffic THROUGH castellan from VPN peers. Only the tunnel is filtered here: the chain's default is accept,
+  # so bridged VM traffic and everything that never touches {{ wg_if }} is left alone.
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+
+    iifname "{{ wg_if }}" ct state invalid drop
+    iifname "{{ wg_if }}" ct state established,related accept
+    oifname "{{ wg_if }}" ct state established,related accept
+{% if wg_jf | length > 0 %}
+    # "jellyfin" peers: the ingress address, web ports only.
+    iifname "{{ wg_if }}" ip saddr { {{ wg_jf | join(', ') }} } ip daddr {{ host_firewall_ingress_ip }} tcp dport { {{ host_firewall_wg_jellyfin_ports | join(', ') }} } accept
+{% endif %}
+{% if wg_lan | length > 0 %}
+    # "lan" peers: the whole LAN, as if they were at home.
+    iifname "{{ wg_if }}" ip saddr { {{ wg_lan | join(', ') }} } ip daddr {{ host_firewall_lan_cidr }} accept
+{% endif %}
+    # Anything else from the tunnel (the internet, other peers, other subnets) is refused; nothing new may start towards a peer.
+    iifname "{{ wg_if }}" limit rate 6/minute log prefix "khef-fw-vpn: " level info
+    iifname "{{ wg_if }}" counter drop
+    oifname "{{ wg_if }}" counter drop
+  }
+
+  # VPN peers appear to the LAN as castellan itself, so the cluster and the ingress answer them without any route changes.
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {{ host_firewall_wg_subnet }} oifname != "{{ wg_if }}" masquerade
+  }
+{% endif %}
 }

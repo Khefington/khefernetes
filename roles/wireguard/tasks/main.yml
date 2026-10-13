@@ -1,0 +1,149 @@
+---
+# WireGuard server on castellan. Keys are made ON castellan (/etc/wireguard, root only) and never leave it except through
+# `make wireguard-client PEER=name`. The repo holds no key at all: only the list of devices in group_vars/all/wireguard.yml.
+- name: Stop if the VPN settings look wrong
+  ansible.builtin.assert:
+    that:
+      - wireguard_peers | map(attribute='name') | list | length == wireguard_peers | map(attribute='name') | list | unique | length
+      - wireguard_peers | map(attribute='ip') | list | length == wireguard_peers | map(attribute='ip') | list | unique | length
+      - wireguard_peers | map(attribute='name') | reject('match', '^[A-Za-z0-9-]+$') | list | length == 0
+      - wireguard_peers | map(attribute='access') | difference(['jellyfin', 'lan']) | length == 0
+      - wireguard_peers | map(attribute='ip') | select('equalto', wireguard_server_ip) | list | length == 0
+    fail_msg: >-
+      wireguard_peers (inventories/group_vars/all/wireguard.yml) needs: a unique name (letters, digits, dash), a unique ip inside
+      {{ wireguard_subnet }} that is not {{ wireguard_server_ip }}, and access of jellyfin or lan.
+  tags: [always]
+
+- name: Check the addresses are inside the VPN network
+  ansible.builtin.command:
+    argv: "{{ ['python3', '-c', wireguard_address_check, wireguard_subnet, wireguard_server_ip] + (wireguard_peers | map(attribute='ip') | list) }}"
+  register: wireguard_addr_check
+  changed_when: false
+  failed_when: wireguard_addr_check.rc != 0
+  check_mode: false
+  tags: [always]
+
+- name: Install WireGuard and the QR code tool
+  ansible.builtin.apt:
+    name:
+      - wireguard-tools
+      - qrencode
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags: [install]
+
+- name: Folders for the keys (root only)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ wireguard_dir }}"
+    - "{{ wireguard_peer_dir }}"
+
+- name: The server's key
+  ansible.builtin.include_tasks: key.yml
+  vars:
+    wireguard_key_name: server
+    wireguard_key_path: "{{ wireguard_dir }}/{{ wireguard_interface }}.key"
+    wireguard_key_preshared: false
+
+- name: Remember the server's keys
+  ansible.builtin.set_fact:
+    wireguard_server_private: "{{ wireguard_key_private }}"
+    wireguard_server_public: "{{ wireguard_key_public }}"
+  no_log: true
+
+- name: Keys for each device
+  ansible.builtin.include_tasks: peer_keys.yml
+  loop: "{{ wireguard_peers }}"
+  loop_control:
+    loop_var: peer
+    label: "{{ peer.name }}"
+
+- name: Let this machine forward packets between the VPN and the LAN
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/99-khefernetes-wireguard.conf
+    state: present
+    reload: true
+
+- name: Is the tunnel up already?
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+  register: wireguard_service
+  check_mode: false
+
+- name: Write the server configuration
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wireguard_dir }}/{{ wireguard_interface }}.conf"
+    owner: root
+    group: root
+    mode: "0600"
+  register: wireguard_conf
+  no_log: true
+
+- name: Start the tunnel now and at every boot
+  ansible.builtin.systemd_service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    enabled: true
+    state: started
+
+- name: Apply a changed configuration to a running tunnel without dropping it
+  when: wireguard_conf.changed and wireguard_service.status.ActiveState | default('') == 'active'
+  block:
+    - name: Read the new configuration the way WireGuard wants it
+      ansible.builtin.command: "wg-quick strip {{ wireguard_interface }}"
+      register: wireguard_stripped
+      changed_when: false
+      no_log: true
+    - name: Load it
+      ansible.builtin.command: "wg syncconf {{ wireguard_interface }} /dev/stdin"
+      args:
+        stdin: "{{ wireguard_stripped.stdout }}"
+      changed_when: true
+      no_log: true
+
+- name: Ask WireGuard what it is doing
+  ansible.builtin.command: "wg show {{ wireguard_interface }} dump"
+  register: wireguard_dump
+  changed_when: false
+  no_log: true
+
+- name: Is the UDP port open on castellan?
+  ansible.builtin.command: "ss -H -ulnp sport = :{{ wireguard_port }}"
+  register: wireguard_listen
+  changed_when: false
+
+- name: Is the host firewall (if loaded) letting the handshake in?
+  ansible.builtin.command: nft list chain inet khef_filter input
+  register: wireguard_fw
+  changed_when: false
+  failed_when: false
+
+- name: Results
+  ansible.builtin.assert:
+    that:
+      - wireguard_dump.stdout_lines | length == wireguard_peers | length + 1
+      - wireguard_listen.stdout | length > 0
+      - wireguard_fw.rc != 0 or ('udp dport ' ~ wireguard_port) in wireguard_fw.stdout
+    fail_msg: >-
+      {{ 'The tunnel does not list every device. ' if wireguard_dump.stdout_lines | length != wireguard_peers | length + 1 else '' }}
+      {{ 'Nothing listens on UDP ' ~ wireguard_port ~ '. ' if wireguard_listen.stdout | length == 0 else '' }}
+      {{ 'The host firewall is loaded without the WireGuard rule: run make host-firewall-apply. ' if wireguard_fw.rc == 0 and ('udp dport ' ~ wireguard_port) not in wireguard_fw.stdout else '' }}
+    success_msg: >-
+      WireGuard is up on {{ wireguard_interface }} (UDP {{ wireguard_port }}) with {{ wireguard_peers | length }} device(s).
+
+- name: What to do next
+  ansible.builtin.debug:
+    msg:
+      - "Server public key: {{ wireguard_server_public }}"
+      - "Devices: {{ wireguard_peers | map(attribute='name') | list }}"
+      - "ONE manual step, once: in the Google Fiber app, forward UDP {{ wireguard_port }} to {{ ansible_host }} (castellan)."
+      - "Then make a device's file:  make wireguard-client PEER=<name>   (shows a QR code for the WireGuard phone app)"
+      - "Reachable devices come through as castellan ({{ ansible_host }}); clients use {{ wireguard_server_ip }} for DNS."

@@ -1,0 +1,21 @@
+---
+# WireGuard: the one way in from outside the house (docs/runbooks/hardening.md, "Remote access").
+# castellan is the VPN server. Nothing else is opened to the internet: only this one UDP port, which does not answer at all
+# to anyone who does not hold a valid key.
+wireguard_enabled: true
+wireguard_interface: wg0
+wireguard_port: 51820 # UDP. Forward this port to castellan (192.168.1.50) in the Google Fiber app: Ansible cannot do that step.
+wireguard_subnet: 10.8.0.0/24 # the VPN's own private network (not your LAN)
+wireguard_server_ip: 10.8.0.1 # castellan inside the VPN; also the DNS server the clients use (jellyfin.home.lan -> ingress)
+
+# How clients find your home: a fixed public IP or, better, a DDNS name (home addresses change). Only used to write client
+# files (`make wireguard-client PEER=phone`). Left empty, the current public address is looked up from castellan each time.
+wireguard_endpoint: ""
+
+# One entry per device. Add a device = add a line, `make wireguard`, `make wireguard-client PEER=<name>`.
+#   name:   letters, digits, dash. Also the file name of its keys on castellan.
+#   ip:     its address inside the VPN. Pick an unused one in wireguard_subnet and never reuse a removed device's address.
+#   access: jellyfin = may open the Jellyfin web address (80/443 on the ingress) and use DNS, nothing else
+#           lan      = the whole LAN plus castellan's admin ports, like being at home (use for your own laptop only)
+wireguard_peers:
+  - {name: phone, ip: 10.8.0.2, access: jellyfin}

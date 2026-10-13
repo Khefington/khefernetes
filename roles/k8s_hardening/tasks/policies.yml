@@ -1,0 +1,85 @@
+---
+- name: Ask the API server for the nodes
+  ansible.builtin.command: "{{ kubectl_cmd }} get nodes -o json"
+  register: k8s_hardening_nodes
+  changed_when: false
+  check_mode: false
+
+# Calls made from a node itself (restore, profile-fix, the security audit, kubelet probes) reach a pod on another node
+# from the node's address or from its flannel address (the first address of the node's pod network). Allow exactly those.
+- name: Work out the node addresses the policy must allow
+  ansible.builtin.set_fact:
+    k8s_hardening_node_cidrs: >-
+      {{ (groups['anvil_cluster'] | map('extract', hostvars, 'ansible_host') | map('regex_replace', '$', '/32') | list)
+         + ((k8s_hardening_nodes.stdout | from_json)['items'] | map(attribute='spec.podCIDR') | map('regex_replace', '/.*$', '/32') | list) }}
+
+- name: Do the pods the policies name actually exist? (a wrong label would cut Jellyfin off)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ item.ns }} get pods -o name
+    -l {% for k, v in item.labels.items() %}{{ k }}={{ v }}{{ ',' if not loop.last }}{% endfor %}
+  loop:
+    - {ns: "{{ k8s_hardening_ingress_namespace }}", labels: "{{ k8s_hardening_ingress_pod_labels[ingress_controller] }}"}
+    - {ns: kube-system, labels: "{{ k8s_hardening_dns_pod_labels }}"}
+  loop_control:
+    label: "{{ item.ns }} {{ item.labels }}"
+  register: k8s_hardening_selector_check
+  changed_when: false
+  check_mode: false
+  failed_when: k8s_hardening_selector_check.stdout | trim | length == 0
+
+- name: Render the policies
+  ansible.builtin.set_fact:
+    k8s_hardening_rendered: "{{ lookup('ansible.builtin.template', 'network-policies.yaml.j2') }}"
+
+- name: Ask the API server to validate them (dry run)
+  ansible.builtin.command:
+    cmd: "{{ kubectl_cmd }} apply --dry-run=server -f -"
+    stdin: "{{ k8s_hardening_rendered }}"
+  register: k8s_hardening_dry
+  changed_when: false
+  check_mode: false
+
+- name: Plan
+  ansible.builtin.debug:
+    msg:
+      - "The API server accepts these NetworkPolicies: {{ k8s_hardening_dry.stdout_lines }}"
+      - "Allowed to reach Jellyfin besides the ingress controller and the backup job: {{ k8s_hardening_node_cidrs }}"
+      - "Nothing was changed. Apply (labels + policies + live probes, automatic rollback) with: make cluster-hardening-apply"
+  when: not k8s_hardening_apply | bool
+
+- name: Apply and prove it works
+  when: k8s_hardening_apply | bool
+  block:
+    - name: Make sure the manifest folder exists
+      ansible.builtin.file:
+        path: "{{ k8s_app_manifest_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the manifest
+      ansible.builtin.copy:
+        content: "{{ k8s_hardening_rendered }}"
+        dest: "{{ k8s_hardening_manifest_path }}"
+        mode: "0644"
+
+    - name: Apply the policies
+      ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ k8s_hardening_manifest_path }}"
+      register: k8s_hardening_applied
+      changed_when: "'unchanged' not in k8s_hardening_applied.stdout"
+
+    - name: Give the network plugin a moment to program the rules
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Probe
+      ansible.builtin.include_tasks: probes.yml
+  rescue:
+    - name: Roll the policies back
+      ansible.builtin.command: "{{ kubectl_cmd }} delete -f {{ k8s_hardening_manifest_path }} --ignore-not-found"
+      changed_when: true
+
+    - name: Say what happened
+      ansible.builtin.fail:
+        msg: >-
+          A critical check failed, so the NetworkPolicies were removed again (the pod-security labels stay). Nothing is cut off.
+          Read the failed check above; fix the policy in roles/k8s_hardening/templates/network-policies.yaml.j2 and run again.

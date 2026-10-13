@@ -12,6 +12,12 @@ jellyfin_users:
     admin: true
     libraries: all
     password: "{{ vault_jellyfin_khef_password }}"
+    # Optional per user:  lockout_attempts: 5   (failed logins before the account locks; default below)
+
+# Failed logins in a row before Jellyfin locks an account (-1 would mean never). A locked account is simply disabled;
+# `make jellyfin-provision` unlocks every account listed above (it sets them enabled again), so the admin cannot be
+# locked out for good as long as the API key still works.
+jellyfin_user_lockout_attempts: 5
 
 # --- Libraries -----------------------------------------------------------------------------
 # path is where the folder appears INSIDE the Jellyfin pod (the library is mounted at /media).
@@ -49,6 +55,10 @@ jellyfin_server_config:
   LibraryScanFanoutConcurrency: 4
   LibraryMetadataRefreshConcurrency: 4
   ParallelImageEncodingLimit: 2
+  # Hardening: refuse the old, weaker way of sending credentials (the X-Emby-* headers and ?api_key= in URLs).
+  # Current clients use the "Authorization: MediaBrowser ..." header and are unaffected; Jellyfin 12 turns this off by default.
+  # If some old client stops signing in, set this to true again and run `make jellyfin-provision`.
+  EnableLegacyAuthorization: false
   TrickplayOptions:
     ProcessThreads: 4
     EnableKeyFrameOnlyExtraction: true # far faster; thumbnails land on key frames, so spacing is slightly uneven

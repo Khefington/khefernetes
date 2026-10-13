@@ -1,0 +1,108 @@
+# Managed by Ansible (khefernetes, role k8s_hardening). Edit the template, not the cluster.
+# Default-deny for the media namespace, then exactly what each app needs. A pod with no policy allowing something cannot do it.
+# To add an app later: give its pods a label and add an ingress/egress policy for it (copy jellyfin-* below).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ media_namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: {{ media_namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+{% for k, v in k8s_hardening_dns_pod_labels.items() %}
+              {{ k }}: {{ v }}
+{% endfor %}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+# Who may reach Jellyfin (port 8096): the ingress controller, the backup job, and the cluster's own nodes
+# (kubelet probes, and the ClusterIP calls that make restore / profile-fix / audit run on the control plane).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jellyfin-ingress
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: jellyfin
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ k8s_hardening_ingress_namespace }}
+          podSelector:
+            matchLabels:
+{% for k, v in k8s_hardening_ingress_pod_labels[ingress_controller].items() %}
+              {{ k }}: {{ v }}
+{% endfor %}
+        - podSelector:
+            matchLabels:
+              app: jellyfin-backup
+{% for cidr in k8s_hardening_node_cidrs %}
+        - ipBlock:
+            cidr: {{ cidr }}
+{% endfor %}
+      ports:
+        - {protocol: TCP, port: 8096}
+---
+# Jellyfin may go out to the internet on the web ports, nothing else. Not your LAN, not other pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jellyfin-egress-internet
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: jellyfin
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+{% for cidr in k8s_hardening_private_ranges %}
+              - {{ cidr }}
+{% endfor %}
+      ports:
+{% for p in k8s_hardening_internet_ports %}
+        - {protocol: TCP, port: {{ p }}}
+{% endfor %}
+---
+# The nightly backup job only talks to Jellyfin.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jellyfin-backup-egress
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: jellyfin-backup
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: jellyfin
+      ports:
+        - {protocol: TCP, port: 8096}

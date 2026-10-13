@@ -1,0 +1,47 @@
+---
+- name: Which of these namespaces exist?
+  ansible.builtin.command: "{{ kubectl_cmd }} get namespace {{ item.key }} -o name"
+  loop: "{{ k8s_hardening_namespace_levels | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: k8s_hardening_ns_exists
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Remember the existing ones
+  ansible.builtin.set_fact:
+    k8s_hardening_ns_present: "{{ k8s_hardening_ns_exists.results | selectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+
+- name: Ask the API server what labelling would say (dry run; existing pods that would break the level are listed as warnings)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} label --dry-run=server --overwrite namespace {{ item.key }}
+    pod-security.kubernetes.io/enforce={{ item.value.enforce }}
+    {% if item.value.audit is defined %}pod-security.kubernetes.io/audit={{ item.value.audit }}{% endif %}
+  loop: "{{ k8s_hardening_ns_present }}"
+  loop_control:
+    label: "{{ item.key }}: enforce={{ item.value.enforce }}{{ ', audit=' ~ item.value.audit if item.value.audit is defined else '' }}"
+  register: k8s_hardening_ns_dry
+  changed_when: false
+  check_mode: false
+  when: not k8s_hardening_apply | bool
+
+- name: What the API server said (a Warning line names a running pod that would be refused at that level today)
+  ansible.builtin.debug:
+    msg: "{{ ((item.stdout_lines | default([])) + (item.stderr_lines | default([]))) | list }}"
+  loop: "{{ k8s_hardening_ns_dry.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key | default('') }}"
+  when: not k8s_hardening_apply | bool
+
+- name: Label the namespaces
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} label --overwrite namespace {{ item.key }}
+    pod-security.kubernetes.io/enforce={{ item.value.enforce }}
+    {% if item.value.audit is defined %}pod-security.kubernetes.io/audit={{ item.value.audit }}{% endif %}
+  loop: "{{ k8s_hardening_ns_present }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: k8s_hardening_ns_label
+  changed_when: "'not labeled' not in k8s_hardening_ns_label.stdout"
+  when: k8s_hardening_apply | bool

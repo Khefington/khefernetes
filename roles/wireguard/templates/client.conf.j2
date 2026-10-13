@@ -1,0 +1,14 @@
+[Interface]
+PrivateKey = {{ wireguard_client_files.results[1].content | b64decode | trim }}
+Address = {{ wireguard_client.ip }}/32
+DNS = {{ wireguard_server_ip }}
+
+[Peer]
+PublicKey = {{ wireguard_client_server_pub.stdout | trim }}
+{% if wireguard_use_preshared_keys | bool %}
+PresharedKey = {{ wireguard_client_files.results[2].content | b64decode | trim }}
+{% endif %}
+Endpoint = {{ wireguard_client_endpoint }}:{{ wireguard_port }}
+# Only the Jellyfin address{{ ' and the LAN' if wireguard_client.access == 'lan' else '' }} goes through the tunnel; everything else on the device uses its normal connection.
+AllowedIPs = {{ wireguard_client_routes[wireguard_client.access] | join(', ') }}
+PersistentKeepalive = {{ wireguard_client_keepalive }}

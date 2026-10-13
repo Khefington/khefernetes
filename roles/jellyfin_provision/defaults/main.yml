@@ -36,3 +36,4 @@ jellyfin_plugins: []
 jellyfin_plugin_settings: {}
 jellyfin_scheduled_task_triggers: {}
 jellyfin_encoding_config: {}
+jellyfin_user_lockout_attempts: 5 # failed logins in a row before an account locks (see inventories/group_vars/all/jellyfin.yml)

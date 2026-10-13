@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -86,6 +86,12 @@ host-firewall-apply: ## Hardening: apply the host firewall + castellan's automat
 	$(PLAYBOOK) playbooks/hardening/hosts.yml -e host_firewall_apply=true
 host-firewall-off: ## Emergency: stop the host firewall on castellan and every VM
 	ansible proxmox:anvil_cluster -b -m ansible.builtin.systemd -a "name=khef-firewall state=stopped enabled=false"
+cluster-hardening: ## Hardening: pod-security labels + media NetworkPolicies, plan only (API server dry run)
+	$(PLAYBOOK) playbooks/hardening/cluster.yml
+cluster-hardening-apply: ## Hardening: apply them, probe the result, roll the policies back automatically if something critical breaks
+	$(PLAYBOOK) playbooks/hardening/cluster.yml -e k8s_hardening_apply=true
+cluster-hardening-off: ## Emergency: remove the media NetworkPolicies again
+	$(PLAYBOOK) playbooks/hardening/cluster.yml -e k8s_hardening_remove=true
 security-audit: ## READ-ONLY: security findings for castellan, the VMs, the cluster and Jellyfin's settings
 	$(PLAYBOOK) playbooks/operations/security_audit.yml
 jellyfin-provision: ## Configure Jellyfin from Git: wizard, plugins, libraries, users, backup key
@@ -103,3 +109,10 @@ flatten-media: ## Report nested library folders (add APPLY=1 to fix them)
 	$(PLAYBOOK) playbooks/operations/flatten_media.yml $(if $(APPLY),-e media_import_apply_flatten=true,)
 diagnose-jellyfin: ## Read-only Jellyfin file-access and trickplay health check
 	$(PLAYBOOK) playbooks/operations/diagnose_jellyfin.yml
+wireguard: ## VPN: WireGuard server on castellan (keys made on castellan, devices from group_vars/all/wireguard.yml)
+	$(PLAYBOOK) playbooks/hardening/wireguard.yml
+wireguard-client: ## VPN: print one device's config + QR code, e.g. make wireguard-client PEER=phone
+	@test -n "$(PEER)" || { echo "Say which device: make wireguard-client PEER=<name>"; exit 2; }
+	$(PLAYBOOK) playbooks/hardening/wireguard_client.yml -e wireguard_client_peer=$(PEER)
+wireguard-off: ## Emergency: stop the VPN on castellan (devices lose access; the LAN is unaffected)
+	ansible proxmox -b -m ansible.builtin.systemd_service -a "name=wg-quick@wg0 state=stopped enabled=false"

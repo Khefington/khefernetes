@@ -1,7 +1,10 @@
 # Managed by Ansible (khefernetes). Manual edits will be overwritten.
-# Answer only on castellan's LAN address, and do not read the host's own resolver settings or /etc/hosts.
+# Answer only on castellan's own addresses (LAN{{ ' and VPN' if dns_server_extra_listen_addresses | length > 0 else '' }}), and do not read the host's own resolver settings or /etc/hosts.
 listen-address={{ dns_server_listen_address }}
-bind-interfaces
+{% for a in dns_server_extra_listen_addresses %}
+listen-address={{ a }}
+{% endfor %}
+bind-dynamic
 no-resolv
 no-hosts
 domain-needed

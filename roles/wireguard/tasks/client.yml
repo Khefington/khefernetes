@@ -1,0 +1,88 @@
+---
+# Print one device's WireGuard file and a QR code for it. Run with:  make wireguard-client PEER=phone
+# The output contains that device's PRIVATE key. Scan the QR code with the WireGuard app, then clear your terminal.
+- name: Which device?
+  ansible.builtin.assert:
+    that:
+      - wireguard_client_peer is defined
+      - wireguard_client_peer | length > 0
+      - wireguard_client_peer in (wireguard_peers | map(attribute='name') | list)
+    fail_msg: >-
+      Say which device: make wireguard-client PEER=<name>. Known devices: {{ wireguard_peers | map(attribute='name') | list }}
+      (add one in inventories/group_vars/all/wireguard.yml and run make wireguard first).
+
+- name: This device's entry
+  ansible.builtin.set_fact:
+    wireguard_client: "{{ wireguard_peers | selectattr('name', 'equalto', wireguard_client_peer) | first }}"
+
+- name: Read the keys from castellan
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ wireguard_dir }}/{{ wireguard_interface }}.key"
+    - "{{ wireguard_peer_dir }}/{{ wireguard_client.name }}.key"
+    - "{{ wireguard_peer_dir }}/{{ wireguard_client.name }}.psk"
+  register: wireguard_client_files
+  no_log: true
+  failed_when: false
+
+- name: Stop if the keys are missing
+  ansible.builtin.assert:
+    that: wireguard_client_files.results[0] is not failed and wireguard_client_files.results[1] is not failed
+    fail_msg: "No keys for {{ wireguard_client.name }} on castellan yet: run make wireguard first."
+
+- name: Server public key
+  ansible.builtin.command: wg pubkey
+  args:
+    stdin: "{{ wireguard_client_files.results[0].content | b64decode | trim }}"
+  register: wireguard_client_server_pub
+  changed_when: false
+  no_log: true
+
+- name: Look up castellan's public address (wireguard_endpoint is empty)
+  ansible.builtin.uri:
+    url: "{{ wireguard_public_ip_url }}"
+    return_content: true
+  register: wireguard_client_pubip
+  changed_when: false
+  failed_when: false
+  when: wireguard_endpoint | length == 0
+
+- name: Which address will the device connect to?
+  ansible.builtin.set_fact:
+    wireguard_client_endpoint: "{{ wireguard_endpoint if wireguard_endpoint | length > 0 else (wireguard_client_pubip.content | default('') | trim) }}"
+
+- name: Check it looks like an address
+  ansible.builtin.assert:
+    that: wireguard_client_endpoint is match('^[A-Za-z0-9.:-]+$')
+    fail_msg: "Could not work out your public address. Set wireguard_endpoint in inventories/group_vars/all/wireguard.yml."
+
+- name: Write the device's file (in memory only)
+  ansible.builtin.set_fact:
+    wireguard_client_conf: "{{ lookup('ansible.builtin.template', 'client.conf.j2') }}"
+  no_log: true
+
+- name: Make the QR code
+  ansible.builtin.command: qrencode -t ansiutf8 -m 2
+  args:
+    stdin: "{{ wireguard_client_conf }}"
+  register: wireguard_client_qr
+  changed_when: false
+  no_log: true
+
+- name: The file, for a PC (save it as a .conf file and import it in the WireGuard app)
+  ansible.builtin.debug:
+    msg: "{{ wireguard_client_conf }}"
+
+- name: The QR code, for a phone (WireGuard app > + > Scan from QR code)
+  ansible.builtin.pause:
+    prompt: "\n{{ wireguard_client_qr.stdout }}\n\nScan this with the WireGuard app on {{ wireguard_client.name }}. Press Enter when done"
+
+- name: Remember
+  vars:
+    dynamic_note: " This is today's address: set wireguard_endpoint (a DDNS name) if your provider changes it."
+  ansible.builtin.debug:
+    msg:
+      - "That output contains {{ wireguard_client.name }}'s private key: do not paste it anywhere, and clear the terminal afterwards."
+      - "Connecting to {{ wireguard_client_endpoint }}:{{ wireguard_port }}.{{ dynamic_note if wireguard_endpoint | length == 0 else '' }}"
+      - "Once connected, open  http://jellyfin.{{ lan_domain }}  in the Jellyfin app or a browser."

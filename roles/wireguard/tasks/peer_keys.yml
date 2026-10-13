@@ -1,0 +1,28 @@
+---
+- name: Device key
+  ansible.builtin.include_tasks: key.yml
+  vars:
+    wireguard_key_name: "{{ peer.name }}"
+    wireguard_key_path: "{{ wireguard_peer_dir }}/{{ peer.name }}.key"
+    wireguard_key_preshared: false
+
+- name: Remember it
+  ansible.builtin.set_fact:
+    wireguard_peer_keys: >-
+      {{ wireguard_peer_keys | default({}) | combine({peer.name: {'private': wireguard_key_private, 'public': wireguard_key_public}}) }}
+  no_log: true
+
+- name: Device preshared key
+  ansible.builtin.include_tasks: key.yml
+  vars:
+    wireguard_key_name: "{{ peer.name }} (preshared)"
+    wireguard_key_path: "{{ wireguard_peer_dir }}/{{ peer.name }}.psk"
+    wireguard_key_preshared: true
+  when: wireguard_use_preshared_keys | bool
+
+- name: Remember the preshared key
+  ansible.builtin.set_fact:
+    wireguard_peer_keys: >-
+      {{ wireguard_peer_keys | combine({peer.name: wireguard_peer_keys[peer.name] | combine({'preshared': wireguard_key_private})}) }}
+  no_log: true
+  when: wireguard_use_preshared_keys | bool

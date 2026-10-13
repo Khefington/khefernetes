@@ -1,0 +1,15 @@
+# Managed by Ansible (khefernetes, role wireguard). Manual edits will be overwritten. Contains the server's private key.
+[Interface]
+Address = {{ wireguard_server_ip }}/{{ wireguard_subnet.split('/')[1] }}
+ListenPort = {{ wireguard_port }}
+PrivateKey = {{ wireguard_server_private }}
+{% for peer in wireguard_peers %}
+
+# {{ peer.name }} ({{ peer.access }})
+[Peer]
+PublicKey = {{ wireguard_peer_keys[peer.name].public }}
+{% if wireguard_use_preshared_keys | bool %}
+PresharedKey = {{ wireguard_peer_keys[peer.name].preshared }}
+{% endif %}
+AllowedIPs = {{ peer.ip }}/32
+{% endfor %}

@@ -1,0 +1,11 @@
+---
+# Cluster hardening, stage 1: pod-security labels on the namespaces + NetworkPolicies for the media namespace.
+#   make cluster-hardening            plan: asks the API server to check everything (dry run); changes nothing
+#   make cluster-hardening-apply      applies, probes (the web, restore path, internet, backup path must still work; the LAN and other pods must be blocked)
+#                                     and removes the policies again by itself if a critical probe fails
+#   make cluster-hardening-off        removes the NetworkPolicies (labels stay)
+- name: Harden the cluster
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - k8s_hardening
