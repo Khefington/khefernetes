@@ -11,6 +11,7 @@ k8s_hardening_manifest_path: "{{ k8s_app_manifest_dir }}/network-policies.yaml"
 # `audit` only records violations of a stricter level without blocking, so we can see how close we are.
 k8s_hardening_namespace_levels:
   "{{ media_namespace }}": {enforce: baseline, audit: restricted} # Jellyfin's start-up helper runs as root (chown), so not `restricted` yet
+  "{{ arr_vpn_namespace | default('downloads') }}": {enforce: privileged} # Gluetun (the VPN client) needs NET_ADMIN and /dev/net/tun; only the downloader pod lives here, sealed by the policies below
   intel-gpu-plugin: {enforce: privileged} # needs hostPath: /dev/dri and the kubelet's device-plugin socket
   local-path-storage: {enforce: privileged} # its helper pods create folders on the node
   metallb-system: {enforce: privileged} # the speaker needs host networking
@@ -32,3 +33,9 @@ k8s_hardening_probe_lan_targets: ["http://{{ lan_gateway }}/", "https://{{ hostv
 k8s_hardening_jellyfin_hostname: "jellyfin.{{ lan_domain }}"
 k8s_hardening_probe_url: /System/Info/Public
 k8s_hardening_vip_url: "http://{{ ingress_vip }}" # how the controller reaches the ingress
+
+# The download stack (role arr_stack). Policies for it are added only when it is deployed (the downloads namespace exists).
+k8s_hardening_arr_apps: [sonarr, radarr, prowlarr] # pods in the media namespace (label app=)
+k8s_hardening_arr_ports: [8989, 7878, 9696]
+# What the downloader pod may send OUT: only the WireGuard tunnel to NordVPN (UDP 51820). Everything else it does happens inside the tunnel.
+k8s_hardening_arr_vpn_egress: [{protocol: UDP, port: 51820}]

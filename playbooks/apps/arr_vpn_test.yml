@@ -1,0 +1,11 @@
+---
+# READ-ONLY: prove the downloader leaves through NordVPN (its public address is not yours, it cannot reach your LAN, its DNS is the tunnel's).
+#   make arr-vpn-test
+- name: Test the tunnel
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Run the checks
+      ansible.builtin.import_role:
+        name: arr_stack
+        tasks_from: vpn_test.yml

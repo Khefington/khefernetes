@@ -1,0 +1,82 @@
+---
+# The same kind of proof for the download stack: what must still work (critical), what must now be blocked (reported).
+- name: "ARR 1/4 - Sonarr's web page through the ingress address"
+  ansible.builtin.uri:
+    url: "{{ k8s_hardening_vip_url }}/ping"
+    headers:
+      Host: "{{ sonarr_hostname }}"
+    use_proxy: false
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: k8s_hardening_a_vip
+  until: k8s_hardening_a_vip.status == 200
+  retries: 6
+  delay: 5
+  changed_when: false
+  check_mode: false
+
+- name: "ARR 2/4 - qBittorrent's web page through the ingress address (200 or 403 both mean it answered)"
+  ansible.builtin.uri:
+    url: "{{ k8s_hardening_vip_url }}/api/v2/app/version"
+    headers:
+      Host: "{{ qbittorrent_hostname }}"
+    use_proxy: false
+    status_code: [200, 403]
+  delegate_to: localhost
+  become: false
+  register: k8s_hardening_a_qb
+  until: k8s_hardening_a_qb.status in [200, 403]
+  retries: 6
+  delay: 5
+  changed_when: false
+  check_mode: false
+
+- name: "ARR 3/4 - Sonarr (and Radarr, Prowlarr) can reach the downloader"
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} run khef-probe-arr-{{ lookup('ansible.builtin.pipe', 'date +%s') }}
+    --rm -i --restart=Never --labels=app=sonarr --image={{ storage_test_image }} --image-pull-policy=IfNotPresent
+    --command -- wget -q -T 8 -O /dev/null http://qbittorrent.{{ arr_vpn_namespace }}.svc.cluster.local:8080/
+  register: k8s_hardening_a_dl
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: "ARR 4/4 - the apps can reach each other (Prowlarr to Sonarr)"
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }} run khef-probe-arr2-{{ lookup('ansible.builtin.pipe', 'date +%s') }}
+    --rm -i --restart=Never --labels=app=prowlarr --image={{ storage_test_image }} --image-pull-policy=IfNotPresent
+    --command -- wget -q -T 8 -O /dev/null http://sonarr:8989/ping
+  register: k8s_hardening_a_peer
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Check the critical download-stack ones
+  ansible.builtin.assert:
+    that:
+      - k8s_hardening_a_dl.rc == 0
+      - k8s_hardening_a_peer.rc == 0
+    fail_msg: >-
+      A policy cut the download stack off: Sonarr to qBittorrent answered rc={{ k8s_hardening_a_dl.rc }},
+      Prowlarr to Sonarr answered rc={{ k8s_hardening_a_peer.rc }}.
+    quiet: true
+
+# Informational: things that must now be BLOCKED.
+- name: Can the downloader's namespace reach your LAN, or can an unrelated pod reach the downloader? (neither may)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n default run khef-probe-arr3-{{ lookup('ansible.builtin.pipe', 'date +%s') }}
+    --rm -i --restart=Never --image={{ storage_test_image }} --image-pull-policy=IfNotPresent
+    --command -- wget -q -T 6 -O /dev/null http://qbittorrent.{{ arr_vpn_namespace }}.svc.cluster.local:8080/
+  register: k8s_hardening_a_other
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Result - download stack
+  ansible.builtin.debug:
+    msg:
+      - "[OK] Sonarr through the ingress address: {{ k8s_hardening_a_vip.status }}"
+      - "[OK] qBittorrent through the ingress address: {{ k8s_hardening_a_qb.status }}"
+      - "[OK] the apps reach the downloader and each other"
+      - "{{ '[OK]   a pod in another namespace cannot reach the downloader' if k8s_hardening_a_other.rc != 0 else '[WARN] a pod in another namespace CAN reach the downloader: the ingress policy is not being enforced' }}"

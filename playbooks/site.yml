@@ -38,3 +38,12 @@
   ansible.builtin.import_playbook: apps/jellyfin_provision.yml
 - name: Install the Jellyfin backup job
   ansible.builtin.import_playbook: apps/jellyfin_backup.yml
+- name: Deploy the download stack (qBittorrent behind NordVPN, Sonarr, Radarr, Prowlarr)
+  ansible.builtin.import_playbook: apps/arr.yml
+  when: arr_enabled | default(false) | bool
+- name: Configure the download stack from Git
+  ansible.builtin.import_playbook: apps/arr_provision.yml
+  when: arr_enabled | default(false) | bool
+- name: Install the download stack's backup job
+  ansible.builtin.import_playbook: apps/arr_backup.yml
+  when: arr_enabled | default(false) | bool

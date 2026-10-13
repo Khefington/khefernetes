@@ -1,0 +1,82 @@
+---
+# READ-ONLY proof that the downloader's traffic leaves through NordVPN and not through your home connection.
+#  1. its public address differs from your home address   2. it cannot reach your LAN   3. its DNS is the tunnel's own resolver
+- name: Your home address, as the internet sees it (asked from castellan)
+  ansible.builtin.uri:
+    url: https://api.ipify.org
+    return_content: true
+    timeout: 15
+  delegate_to: "{{ groups['proxmox'][0] }}"
+  register: arr_test_home
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: The downloader's address, as the internet sees it (asked from inside the pod; plain http, Gluetun's image has no TLS client)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ arr_vpn_namespace }} exec deploy/qbittorrent -c gluetun --
+    wget -q -O - -T 15 {{ item }}
+  loop: [http://api.ipify.org, http://ifconfig.me/ip, http://icanhazip.com]
+  register: arr_test_vpn
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  until: arr_test_vpn.rc == 0 and arr_test_vpn.stdout | trim | length > 0
+  retries: 1
+
+- name: Can the pod reach your router? (it must not)
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ arr_vpn_namespace }} exec deploy/qbittorrent -c gluetun --
+    wget -q -O /dev/null -T 6 http://{{ lan_gateway }}/
+  register: arr_test_lan
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Which DNS does the pod use?
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ arr_vpn_namespace }} exec deploy/qbittorrent -c qbittorrent -- cat /etc/resolv.conf"
+  register: arr_test_dns
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Gluetun's last lines
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ arr_vpn_namespace }} logs deploy/qbittorrent -c gluetun --tail=12"
+  register: arr_test_log
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Work out the answers
+  ansible.builtin.set_fact:
+    arr_test_home_ip: "{{ arr_test_home.content | default('') | trim }}"
+    arr_test_vpn_ip: "{{ (arr_test_vpn.results | selectattr('rc', 'equalto', 0) | map(attribute='stdout') | map('trim') | select | list | first) | default('') }}"
+
+- name: The result
+  vars:
+    arr_test_ns_lines: "{{ arr_test_dns.stdout_lines | select('match', '^nameserver') | list }}"
+    arr_test_ip_ok: "{{ arr_test_home_ip | length > 0 and arr_test_vpn_ip | length > 0 and arr_test_vpn_ip != arr_test_home_ip }}"
+  ansible.builtin.debug:
+    msg:
+      - >-
+        {{ 'OK  ' if arr_test_ip_ok else 'FAIL' }} the downloader's public address is {{ arr_test_vpn_ip or 'unknown' }};
+        your home address is {{ arr_test_home_ip or 'unknown' }}
+      - >-
+        {{ 'OK  ' if arr_test_lan.rc != 0 else 'FAIL' }} the downloader {{ 'cannot' if arr_test_lan.rc != 0 else 'CAN' }}
+        reach your router ({{ lan_gateway }})
+      - >-
+        {{ 'OK  ' if arr_test_ns_lines == ['nameserver 127.0.0.1'] else 'FAIL' }} DNS is the tunnel's own resolver only
+        ({{ arr_test_ns_lines | join(', ') }})
+
+- name: Stop if the downloader is not behind the tunnel
+  ansible.builtin.assert:
+    that:
+      - arr_test_home_ip | length > 0
+      - arr_test_vpn_ip | length > 0
+      - arr_test_vpn_ip != arr_test_home_ip
+      - arr_test_lan.rc != 0
+      - arr_test_dns.stdout_lines | select('match', '^nameserver') | list == ['nameserver 127.0.0.1']
+    quiet: true
+    fail_msg: |-
+      The downloader is NOT provably behind the VPN (see the lines above; an unknown address means that check could not run). Gluetun's log:
+      {{ arr_test_log.stdout_lines | default([]) | join('\n') }}

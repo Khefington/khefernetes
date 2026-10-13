@@ -1,0 +1,108 @@
+---
+# Deploy the download stack. Safe to repeat. Needs `make nfs` and `make k8s-storage` (the shares and the local-path provisioner).
+- name: Stop with a helpful message if a vault secret is missing
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', item, default='changeme') | string != 'changeme'
+      - lookup('ansible.builtin.vars', item, default='') | string | length > 0
+    quiet: true
+    fail_msg: "{{ item }} is missing or still 'changeme' in inventories/group_vars/all/vault.yml (names and how to make them: docs/runbooks/download-stack.md)."
+  loop:
+    - vault_arr_password
+    - vault_sonarr_api_key
+    - vault_radarr_api_key
+    - vault_prowlarr_api_key
+    - vault_nordvpn_wireguard_private_key
+
+- name: The API keys must be 32 hexadecimal characters
+  ansible.builtin.assert:
+    that: lookup('ansible.builtin.vars', item) | string is match('^[0-9a-fA-F]{32}$')
+    quiet: true
+    fail_msg: "{{ item }} must be exactly 32 hex characters (make one with: openssl rand -hex 16)."
+  loop:
+    - vault_sonarr_api_key
+    - vault_radarr_api_key
+    - vault_prowlarr_api_key
+
+- name: Create the manifest folder
+  ansible.builtin.file:
+    path: "{{ arr_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Pre-pull the images on the workers (so a wrong tag stops us now)
+  ansible.builtin.include_tasks: pull.yml
+  when: arr_pull_images | bool
+
+- name: Create the downloads namespace (labels added by the hardening stage are kept)
+  ansible.builtin.command:
+    cmd: "{{ kubectl_cmd }} apply -f -"
+    stdin: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: {{ arr_vpn_namespace }}
+  register: arr_ns
+  changed_when: "'unchanged' not in arr_ns.stdout"
+
+- name: Secrets (written straight to the cluster, never to a file)
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: Write the manifests
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ arr_manifest_dir }}/{{ item.dest }}"
+    mode: "0644"
+  loop:
+    - {src: downloads.yaml.j2, dest: downloads.yaml}
+    - {src: servarr.yaml.j2, dest: servarr.yaml}
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Apply them
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ arr_manifest_dir }}/{{ item }}"
+  loop: [downloads.yaml, servarr.yaml]
+  register: arr_apply
+  changed_when: arr_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+- name: Wait until everything is ready (the downloader is ready only when the VPN tunnel is up)
+  block:
+    - name: Wait for the downloader (Gluetun + qBittorrent)
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ arr_vpn_namespace }} rollout status deployment/qbittorrent --timeout={{ arr_rollout_timeout }}"
+      changed_when: false
+    - name: Wait for the apps
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} rollout status deployment/{{ item.name }} --timeout={{ arr_rollout_timeout }}"
+      loop: "{{ arr_apps }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: false
+  rescue:
+    - name: Collect what Kubernetes says went wrong
+      ansible.builtin.shell: |
+        set -o pipefail
+        {{ kubectl_cmd }} get pods -o wide -n {{ arr_vpn_namespace }}
+        {{ kubectl_cmd }} get pods -o wide -n {{ media_namespace }} -l khefernetes/stack=arr
+        echo ---- GLUETUN LOG ----
+        {{ kubectl_cmd }} -n {{ arr_vpn_namespace }} logs deploy/qbittorrent -c gluetun --tail=25 || true
+        echo ---- EVENTS ----
+        {{ kubectl_cmd }} get events -A --sort-by=.lastTimestamp | tail -15
+      args:
+        executable: /bin/bash
+      register: arr_diag
+      changed_when: false
+      failed_when: false
+    - name: Show it
+      ansible.builtin.debug:
+        var: arr_diag.stdout_lines
+    - name: Stop
+      ansible.builtin.fail:
+        msg: >-
+          The stack did not become ready. The Gluetun log above usually says why: a wrong or expired WireGuard key ("unauthorized"),
+          no tun device ("operation not permitted": set arr_vpn_privileged: true), or an unknown country. ImagePullBackOff means a tag
+          does not exist (versions.yml). Fix it and run `make arr` again.
+
+- name: Next steps
+  ansible.builtin.debug:
+    msg:
+      - "Deployed. Next: make arr-provision (settings, root folders, download client, indexers), then make arr-vpn-test and make arr-backup."
+      - "Web pages (LAN only): http://{{ sonarr_hostname }}  http://{{ radarr_hostname }}  http://{{ prowlarr_hostname }}  http://{{ qbittorrent_hostname }}"

@@ -1,0 +1,68 @@
+---
+- name: "Prowlarr: sign-in"
+  ansible.builtin.include_tasks: host_config.yml
+  vars:
+    app: prowlarr
+
+# Applications: Prowlarr pushes its indexers to Sonarr and Radarr (full sync) and keeps them up to date.
+- name: "Prowlarr: link Sonarr and Radarr"
+  ansible.builtin.include_tasks: resource.yml
+  vars:
+    app: prowlarr
+    res_path: applications
+    res_schema_key: implementation
+    res_schema_value: "{{ item.name | capitalize }}"
+    res_name: "{{ item.name | capitalize }}"
+    res_fields:
+      prowlarrUrl: "{{ arr_provision_prowlarr_url }}"
+      baseUrl: "http://{{ item.name }}:{{ item.port }}"
+      apiKey: "{{ arr_provision_targets[item.name].key }}"
+    res_props: {syncLevel: fullSync, tags: []}
+  loop:
+    - {name: sonarr, port: 8989}
+    - {name: radarr, port: 7878}
+  loop_control:
+    label: "{{ item.name }}"
+
+# Indexers declared in Git.
+- name: "Prowlarr: indexers"
+  ansible.builtin.include_tasks: resource.yml
+  vars:
+    app: prowlarr
+    res_path: indexer
+    res_schema_key: definitionName
+    res_schema_value: "{{ item.definition }}"
+    res_name: "{{ item.name }}"
+    res_fields: "{{ item.fields | default({}) }}"
+    res_props:
+      enable: "{{ item.enable | default(true) }}"
+      priority: "{{ item.priority | default(25) }}"
+      appProfileId: "{{ item.app_profile_id | default(1) }}"
+      tags: []
+  loop: "{{ arr_prowlarr_indexers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: "Prowlarr: list the indexer definitions it knows (arr_show_indexer_definitions=true)"
+  when: arr_show_indexer_definitions | bool or arr_show_indexer_fields | length > 0
+  block:
+    - name: Ask for the list
+      ansible.builtin.uri:
+        url: "{{ arr_provision_url }}/api/v1/indexer/schema"
+        headers:
+          Host: "{{ arr_provision_targets.prowlarr.host }}"
+          X-Api-Key: "{{ arr_provision_targets.prowlarr.key }}"
+      register: arr_indexer_schema
+      changed_when: false
+      no_log: true
+    - name: Definitions
+      ansible.builtin.debug:
+        msg: "{{ arr_indexer_schema.json | map(attribute='definitionName') | sort | list }}"
+      when: arr_show_indexer_definitions | bool
+    - name: The fields of one definition
+      ansible.builtin.debug:
+        msg: >-
+          {{ (arr_indexer_schema.json | arr_pick('definitionName', arr_show_indexer_fields)).fields
+             | map(attribute='name') | zip((arr_indexer_schema.json | arr_pick('definitionName', arr_show_indexer_fields)).fields
+             | map(attribute='label')) | map('join', '  =  ') | list }}
+      when: arr_show_indexer_fields | length > 0

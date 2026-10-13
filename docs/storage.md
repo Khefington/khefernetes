@@ -7,6 +7,7 @@ data/
   media/<library>/        what Jellyfin (read-only) and other apps read      movies tv music books
   downloads/<library>/    finished downloads per category; hardlinked into media/
   backups/jellyfin/       nightly Jellyfin backups
+  backups/arr/            nightly Sonarr / Radarr / Prowlarr backups (14 kept each)
 /mnt/staging/incomplete   (2TB SSD, separate export) in-progress downloads
 /mnt/staging/appdata      (2TB SSD, separate export) app files that are expensive to regenerate:
                             jellyfin/trickplay, jellyfin/metadata, jellyfin/subtitles, jellyfin/attachments
@@ -14,6 +15,8 @@ data/
 ```
 
 `media_libraries` in `inventories/group_vars/all/media.yml` is the single source of truth.
+
+Who mounts what (download stack, `docs/runbooks/download-stack.md`): qBittorrent sees only `downloads/` (at `/data/downloads`) and the SSD `incomplete` folder, never the library; Sonarr and Radarr see the whole data share at `/data`, so `/data/downloads/tv/...` and `/data/media/tv/...` are one filesystem and an import is a hardlink. The same absolute paths are used in every container, so no remote-path mapping is needed. Their databases live on node-local volumes (SQLite), backed up nightly to `backups/arr/`.
 Add a name there and run `make nfs`; folders for both `media/` and `downloads/` are created.
 
 ## Hardlinks (why `media/` and `downloads/` share an export)

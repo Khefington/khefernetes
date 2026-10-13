@@ -93,6 +93,10 @@ ACCEPTED = {
     ("metallb-system", "controller"): "MetalLB's controller (upstream manifest; no limits or seccomp profile set)",
     ("intel-gpu-plugin", "intel-gpu-plugin"): "the GPU device plugin must see /dev/dri, /sys/class/drm and the kubelet device-plugin socket",
     ("local-path-storage", "local-path-provisioner"): "creates the node-local volumes (Jellyfin's database lives on one)",
+    ("media", "sonarr"): "the hotio image starts as root to fix the config folder's owner, then runs the app as uid 1500 (capabilities limited to what that needs)",
+    ("media", "radarr"): "the hotio image starts as root to fix the config folder's owner, then runs the app as uid 1500 (capabilities limited to what that needs)",
+    ("media", "prowlarr"): "the hotio image starts as root to fix the config folder's owner, then runs the app as uid 1500 (capabilities limited to what that needs)",
+    ("downloads", "qbittorrent"): "Gluetun (the VPN client) needs NET_ADMIN and the tun device; sealed by its own network policies, only the WireGuard tunnel may leave",
 }
 
 

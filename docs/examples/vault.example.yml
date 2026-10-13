@@ -9,3 +9,9 @@ vault_jellyfin_khef_password: "changeme"
 vault_opensubtitles_username: "changeme"
 vault_opensubtitles_password: "changeme"
 vault_duckdns_token: "changeme"   # only if you use the DuckDNS updater (make ddns)
+# Download stack (make arr): see docs/runbooks/download-stack.md
+vault_arr_password: "changeme"                 # the password for Sonarr, Radarr, Prowlarr and qBittorrent (user name: arr_admin_user)
+vault_sonarr_api_key: "changeme"               # 32 hex characters:  openssl rand -hex 16
+vault_radarr_api_key: "changeme"               # 32 hex characters
+vault_prowlarr_api_key: "changeme"             # 32 hex characters
+vault_nordvpn_wireguard_private_key: "changeme" # NordLynx private key, see docs/runbooks/download-stack.md ("Get the Nord key")

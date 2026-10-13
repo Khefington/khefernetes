@@ -1,0 +1,27 @@
+---
+- name: "Remove an old restore job, if any: {{ arr_restore_app }}"
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} delete job arr-restore-{{ arr_restore_app }} --ignore-not-found"
+  changed_when: false
+
+- name: "Write and start the restore job: {{ arr_restore_app }}"
+  ansible.builtin.template:
+    src: arr-restore-job.yaml.j2
+    dest: "{{ arr_restore_manifest_path }}"
+    mode: "0644"
+
+- name: "Apply: {{ arr_restore_app }}"
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ arr_restore_manifest_path }}"
+  changed_when: true
+
+- name: "Wait for it to finish: {{ arr_restore_app }}"
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} wait --for=condition=complete job/arr-restore-{{ arr_restore_app }} --timeout={{ arr_restore_wait_seconds }}s"
+  changed_when: false
+
+- name: "Its log: {{ arr_restore_app }}"
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} logs job/arr-restore-{{ arr_restore_app }}"
+  register: arr_restore_log
+  changed_when: false
+
+- name: "Say what happened: {{ arr_restore_app }}"
+  ansible.builtin.debug:
+    msg: "{{ arr_restore_log.stdout_lines | select('search', 'restor|RESTORED|NO BACKUP') | list }}"

@@ -19,3 +19,14 @@ metallb_sha256: bf25feebb7582ca7df845efd52ffbc2960d6cbf4cfc972f47fded9f788b67f0b
 # Intel GPU device plugin (hands /dev/dri to pods that ask for gpu.intel.com/i915).
 # https://github.com/intel/intel-device-plugins-for-kubernetes/releases  The image tag follows the release number.
 intel_gpu_plugin_version: "0.36.0"
+
+# Download stack (make arr). Sonarr / Radarr / Prowlarr / qBittorrent use the hotio images (tag release-<version>), Gluetun is the
+# VPN client that qBittorrent shares a network with. Check the release pages before bumping; `make arr` pre-pulls the images
+# on the node and stops with the registry's answer if a tag does not exist.
+#   https://github.com/Sonarr/Sonarr/releases  https://github.com/Radarr/Radarr/releases  https://github.com/Prowlarr/Prowlarr/releases
+#   https://github.com/qbittorrent/qBittorrent/releases  https://github.com/qdm12/gluetun/releases
+sonarr_version: "4.0.20.3014"
+radarr_version: "6.3.0.10514"
+prowlarr_version: "2.6.5.5623"
+qbittorrent_version: "5.2.4"
+gluetun_version: "v3.41.3"

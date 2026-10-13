@@ -2,7 +2,7 @@
 
 **Survives:** everything on castellan: the media library, Jellyfin backups, etcd snapshots, trickplay images, NFS exports, the VM template (9000).
 **Rebuilt:** the three VMs, RKE2, MetalLB, the ingress, Kubernetes objects, Jellyfin.
-**Restored from backup:** Jellyfin's database (users, watch history, library settings).
+**Restored from backup:** Jellyfin's database (users, watch history, library settings), and the databases of Sonarr, Radarr and Prowlarr (`make arr-restore`; the downloads and the qBittorrent settings come back from Git).
 **Lost on purpose:** the old cluster's state. It was only ever built from this repo.
 
 Take it one numbered step at a time and check the "You should see" line before going on. Nothing in steps 3 to 5 can touch your media.
@@ -14,6 +14,7 @@ Take it one numbered step at a time and check the "You should see" line before g
 3. Open the vault (`ansible-vault edit inventories/group_vars/all/vault.yml`) and confirm `vault_rke2_token` is the new token you generated.
 4. `make backup-now`. *You should see:* the log ends with "Done.", and a new zip exists in `<hdd>/data/backups/jellyfin/`.
 5. `make etcd-backup-now`. *You should see:* `PASS: ... is on castellan`.
+   Download stack (if `arr_enabled`): `make arr-backup-now`. *You should see:* a saved zip for sonarr, radarr and prowlarr, then `Done.` They land in `<hdd>/data/backups/arr/` on castellan, which a rebuild does not touch.
 6. Copy the newest Jellyfin backup off castellan, for example from WSL:
    `scp ansible@castellan:/mnt/pve/castellan-hdd1/data/backups/jellyfin/<newest file> ~/khefernetes-backups/`
    A restore drill only counts if the backup lives outside the thing you destroy.
@@ -49,6 +50,7 @@ The stage-by-stage form in section 3 is for finding out which step breaks.
 | 6b | `make gpu-plugin` | each GPU node offers `gpu.intel.com/i915` (2 shares) |
 | 7 | `make jellyfin` | pod ready, then the health check through the ingress answers |
 | 7b | `make jellyfin-gpu-test` | every required check `OK`: H.264/HEVC encode and decode inside the Jellyfin pod on the GPU (the HDR probe is optional) |
+| 7c | `make arr` | (download stack, if `arr_enabled`) pre-pulls the images, then qBittorrent+Gluetun, Sonarr, Radarr and Prowlarr rolled out; then `make arr-provision` and `make arr-vpn-test` (`make site` runs them in order) |
 | 8 | `make jellyfin-provision` | the first-run wizard done, plugins installed, the four libraries and the `Khef` user present, the backup key stored |
 
 `make site` runs steps 1 to 8 in this order in one go (it stops at 7b if the GPU does not work, before Quick Sync is switched on). The stage-by-stage form above is for finding out which step breaks.

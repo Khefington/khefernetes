@@ -7,11 +7,11 @@
 # Everything is idempotent: if it stops half way, fix the cause and run `make rebuild` again.
 #
 # Switches (all default to true; -e name=false turns one off):
-#   rebuild_restore   restore Jellyfin's data from the newest backup. Do this BEFORE the 05:30 backup job has run on the new cluster,
+#   rebuild_restore   restore Jellyfin's data (and Sonarr/Radarr/Prowlarr's) from the newest backup. Do this BEFORE the 05:30 backup job has run on the new cluster,
 #                     otherwise the newest zip is a backup of the empty server (the restore lists every zip with its date).
 #   rebuild_harden    host firewall (castellan + VMs), cluster pod-security + network policies
 #   rebuild_vpn       WireGuard (and DuckDNS when ddns_duckdns_subdomain is set) on castellan
-#   rebuild_backups   take one Jellyfin backup and one etcd snapshot at the end
+#   rebuild_backups   take one Jellyfin backup, one download-stack backup and one etcd snapshot at the end
 #   rebuild_audit     print the read-only security audit at the end
 #
 # Not included (one-off or destructive, by hand): destroying the VMs (make destroy-vms), first-time Proxmox setup
@@ -38,6 +38,21 @@
         - vault_opensubtitles_username
         - vault_opensubtitles_password
 
+    - name: The download stack's secrets are present too
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.vars', item, default='changeme') | string != 'changeme'
+          - lookup('ansible.builtin.vars', item, default='') | string | length > 0
+        quiet: true
+        fail_msg: "{{ item }} is missing or still 'changeme' in inventories/group_vars/all/vault.yml (names and how to make them: docs/runbooks/download-stack.md). Or set arr_enabled: false."
+      loop:
+        - vault_arr_password
+        - vault_sonarr_api_key
+        - vault_radarr_api_key
+        - vault_prowlarr_api_key
+        - vault_nordvpn_wireguard_private_key
+      when: arr_enabled | default(false) | bool
+
 - name: Pre-flight, castellan answers
   hosts: proxmox
   gather_facts: false
@@ -53,6 +68,10 @@
 - name: Restore Jellyfin's data from the newest backup, then re-apply the settings and profile pictures
   ansible.builtin.import_playbook: apps/jellyfin_restore.yml
   when: rebuild_restore | default(true) | bool
+
+- name: Restore Sonarr, Radarr and Prowlarr from their newest backup zips, then re-apply the settings
+  ansible.builtin.import_playbook: apps/arr_restore.yml
+  when: (rebuild_restore | default(true) | bool) and (arr_enabled | default(false) | bool)
 
 # 3. Hardening -------------------------------------------------------------------------------------------------------------
 - name: Host firewall and automatic security updates (castellan, then the VMs, with automatic rollback)
@@ -83,6 +102,12 @@
     jellyfin_backup_run_now: true
   when: rebuild_backups | default(true) | bool
 
+- name: First backup of the download stack
+  ansible.builtin.import_playbook: apps/arr_backup.yml
+  vars:
+    arr_backup_run_now: true
+  when: (rebuild_backups | default(true) | bool) and (arr_enabled | default(false) | bool)
+
 - name: First etcd snapshot (the new cluster has a new token)
   ansible.builtin.import_playbook: cluster/etcd_backup.yml
   vars:
@@ -106,4 +131,5 @@
           - "1. http://jellyfin.{{ lan_domain }}: sign in as Khef; your home screen, watched marks and profile picture are back (make jellyfin-profile-check)."
           - "2. A video plays and scrubbing shows thumbnails. make diagnose-jellyfin should show all PASS."
           - "3. From outside the house, with Wi-Fi off: switch the WireGuard tunnel on and open http://jellyfin.{{ lan_domain }}."
-          - "4. Compare the audit above with your last one: no new [WARN]."
+          - "4. Download stack (if arr_enabled): make arr-vpn-test shows the downloader's public address is NordVPN's; Sonarr/Radarr list your series and movies; Prowlarr shows your indexers."
+          - "5. Compare the audit above with your last one: no new [WARN]."

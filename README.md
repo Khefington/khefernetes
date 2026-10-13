@@ -26,6 +26,7 @@ make site                                   # the whole build, in order
 | Restore Jellyfin from its newest backup (then provision + fix profile pictures) | `make jellyfin-restore` (details: `docs/runbooks/jellyfin-backup.md`) |
 | Upgrade Jellyfin 10.11 -> 12: check (read-only) / upgrade / undo / delete the volume copies | `make jellyfin-upgrade-check`, `make jellyfin-upgrade` (then `make jellyfin-upgrade-finish` if it stopped while Jellyfin was still migrating), `make jellyfin-rollback JELLYFIN_OLD=10.11.11`, `make jellyfin-upgrade-cleanup` (details: `docs/runbooks/jellyfin-upgrade.md`) |
 | Are users' profile pictures linked? / re-attach them | `make jellyfin-profile-check` (read-only), `make jellyfin-profile-fix` |
+| Download stack (qBittorrent behind NordVPN, Sonarr, Radarr, Prowlarr): deploy / configure from Git / prove the VPN / back up now / restore | `make arr`, `make arr-provision`, `make arr-vpn-test`, `make arr-backup-now`, `make arr-restore` (details and the vault secrets: `docs/runbooks/download-stack.md`) |
 | Cluster hardening (pod security + network policies): plan / apply / off | `make cluster-hardening`, `make cluster-hardening-apply`, `make cluster-hardening-off` |
 | Host firewall plan / apply / emergency off | `make host-firewall`, `make host-firewall-apply`, `make host-firewall-off` (details: `docs/runbooks/hardening.md`) |
 | VPN (WireGuard on castellan): server / one device's config + QR / emergency off | `make wireguard`, `make wireguard-client PEER=phone`, `make wireguard-off`; changing home IP: `make ddns`, `make ddns-status` (details: `docs/runbooks/hardening.md`, stage 4) |
@@ -56,7 +57,7 @@ Details: [docs/architecture.md](docs/architecture.md). Storage and large-library
 - [Names on the LAN: DNS server on castellan](docs/runbooks/dns.md)
 - [Secrets](docs/secrets.md)
 - [Rebuild / restore drill](docs/rebuild.md)
-- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [Jellyfin 12 upgrade](docs/runbooks/jellyfin-upgrade.md), [hardening](docs/runbooks/hardening.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
+- Runbooks: [etcd snapshots and restore](docs/runbooks/etcd-restore.md), [import media](docs/runbooks/import-media.md), [Jellyfin as code](docs/runbooks/jellyfin-provision.md), [Jellyfin backup](docs/runbooks/jellyfin-backup.md), [Jellyfin 12 upgrade](docs/runbooks/jellyfin-upgrade.md), [download stack](docs/runbooks/download-stack.md), [hardening](docs/runbooks/hardening.md), [sizing](docs/sizing.md), [trickplay](docs/runbooks/jellyfin-trickplay.md)
 - [Migrating from the old layout](docs/MIGRATION.md)
 - [Ansible variable precedence cheat sheet](docs/ansible-precedence.md)
 - [Dev log](docs/devlog.md)

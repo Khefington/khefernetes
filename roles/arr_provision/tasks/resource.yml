@@ -1,0 +1,86 @@
+---
+# Make one object exist and match Git: a download client, an application link or an indexer.
+# Needs: app, res_path (downloadclient | applications | indexer), res_schema_key (implementation | definitionName),
+#        res_schema_value, res_name, res_fields ({field name: value}), res_props ({top-level property: value}).
+# The app's own schema entry is the starting point, so every setting this version has is present with its default.
+- name: "Read what the app offers: {{ arr_provision_label }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/{{ res_path }}/schema"
+    headers: &arr_res_headers
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+  register: arr_res_schema
+  changed_when: false
+  no_log: true
+
+- name: "Pick the template: {{ arr_provision_label }}"
+  ansible.builtin.set_fact:
+    arr_res_template: "{{ arr_res_schema.json | arr_pick(res_schema_key, res_schema_value) }}"
+  no_log: true
+
+- name: "Stop on a setting this version of the app does not have: {{ arr_provision_label }}"
+  ansible.builtin.assert:
+    that: (arr_res_template | arr_missing_fields(res_fields)) | length == 0
+    quiet: true
+    fail_msg: >-
+      {{ res_name }}: {{ arr_res_template | arr_missing_fields(res_fields) }} are not settings of {{ res_schema_value }} in this version of {{ app }}.
+      Its settings are: {{ arr_res_template.fields | map(attribute='name') | list }}.
+
+- name: "Read what exists: {{ arr_provision_label }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/{{ res_path }}"
+    headers: *arr_res_headers
+  register: arr_res_all
+  changed_when: false
+  no_log: true
+
+- name: "Work out what to send: {{ arr_provision_label }}"
+  vars:
+    arr_res_existing: "{{ arr_res_all.json | selectattr('name', 'equalto', res_name) | list | first | default({}) }}"
+    arr_res_all_props: "{{ res_props | combine({'name': res_name}) }}"
+  ansible.builtin.set_fact:
+    arr_res_id: "{{ arr_res_existing.id | default('') }}"
+    arr_res_body: "{{ (arr_res_existing if arr_res_existing | length > 0 else arr_res_template) | arr_apply(res_fields, arr_res_all_props) }}"
+    arr_res_needs_change: >-
+      {{ arr_res_existing | length == 0
+         or (arr_res_existing | arr_differs(res_fields, arr_res_all_props, arr_res_template | arr_secret_fields))
+         or (arr_provision_force | bool) }}
+  no_log: true
+
+- name: "Create it: {{ arr_provision_label }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/{{ res_path }}{{ '?forceSave=true' if arr_provision_force_save | bool else '' }}"
+    method: POST
+    headers: *arr_res_headers
+    body_format: json
+    body: "{{ arr_res_body }}"
+    status_code: [200, 201, 202, 400]
+  when: arr_res_id | string | length == 0
+  register: arr_res_created
+  changed_when: arr_res_created.status | default(400) < 400
+  no_log: true
+
+- name: "Update it: {{ arr_provision_label }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/{{ res_path }}/{{ arr_res_id }}{{ '?forceSave=true' if arr_provision_force_save | bool else '' }}"
+    method: PUT
+    headers: *arr_res_headers
+    body_format: json
+    body: "{{ arr_res_body }}"
+    status_code: [200, 201, 202, 400]
+  when: arr_res_id | string | length > 0 and arr_res_needs_change | bool
+  register: arr_res_updated
+  changed_when: arr_res_updated.status | default(400) < 400
+  no_log: true
+
+# The apps answer 400 with their own explanation (for example "Unable to connect to qBittorrent") when they refuse a setting; show it.
+# The request itself is not shown (it holds passwords), the answer does not.
+- name: "Stop with the app's own message if it refused: {{ arr_provision_label }}"
+  vars:
+    arr_res_answer: "{{ arr_res_created if arr_res_created.status is defined else arr_res_updated }}"
+  ansible.builtin.assert:
+    that: arr_res_answer.status | default(200) < 400
+    quiet: true
+    fail_msg: >-
+      {{ app }} refused {{ res_name }}: {{ arr_res_answer.json | default(arr_res_answer.content | default('')) | to_json }}
+      If the connection test is what failed and you want it saved anyway: -e arr_provision_force_save=true

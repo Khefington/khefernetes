@@ -1,0 +1,22 @@
+---
+- name: Create a job from the CronJob
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }}
+    create job arr-backup-manual-{{ lookup('ansible.builtin.pipe', 'date +%s') }} --from=cronjob/arr-backup
+  register: arr_backup_job
+  changed_when: true
+
+- name: Wait for it to finish
+  ansible.builtin.command: >-
+    {{ kubectl_cmd }} -n {{ media_namespace }}
+    wait --for=condition=complete {{ arr_backup_job.stdout.split()[0] }} --timeout={{ arr_backup_wait_seconds }}s
+  changed_when: false
+
+- name: Fetch the job's log
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} logs {{ arr_backup_job.stdout.split()[0] }}"
+  register: arr_backup_log
+  changed_when: false
+
+- name: Log
+  ansible.builtin.debug:
+    var: arr_backup_log.stdout_lines

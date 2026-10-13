@@ -1,0 +1,131 @@
+# Managed by Ansible (khefernetes, role arr_stack). Edit the template, not the cluster.
+# Sonarr, Radarr and Prowlarr. Each: a node-local config volume (its SQLite database), a Deployment, a Service, a host-only Ingress.
+# API keys come from the vault (through the Secret arr-secrets); the apps read them from the environment, so they never depend on
+# a generated key inside a database that might be restored from an old backup.
+{% for app in arr_apps %}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ app.name }}-config
+  namespace: {{ media_namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: {{ arr_config_size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ app.name }}
+  namespace: {{ media_namespace }}
+  labels:
+    app: {{ app.name }}
+    khefernetes/stack: arr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ app.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ app.name }}
+        khefernetes/stack: arr
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      containers:
+        - name: {{ app.name }}
+          image: {{ app.image }}
+          env:
+            - {name: PUID, value: "{{ media_uid }}"}
+            - {name: PGID, value: "{{ media_gid }}"}
+            - {name: UMASK, value: "002"}
+            - {name: TZ, value: {{ timezone }}}
+            - {name: {{ app.prefix }}__SERVER__PORT, value: "{{ app.port }}"}
+            - name: {{ app.prefix }}__AUTH__APIKEY
+              valueFrom:
+                secretKeyRef: {name: arr-secrets, key: {{ app.secret_key }}}
+            - {name: {{ app.prefix }}__AUTH__METHOD, value: Forms}
+            - {name: {{ app.prefix }}__AUTH__REQUIRED, value: Enabled}
+            - {name: {{ app.prefix }}__UPDATE__MECHANISM, value: Docker}       # updates come from the image tag in versions.yml
+            - {name: {{ app.prefix }}__UPDATE__AUTOMATICALLY, value: "false"}
+            - {name: {{ app.prefix }}__LOG__ANALYTICSENABLED, value: "false"}
+          ports:
+            - {name: http, containerPort: {{ app.port }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # the image starts as root, fixes /config, then drops to the media user
+          startupProbe:
+            httpGet: {path: /ping, port: http}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /ping, port: http}
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: {path: /ping, port: http}
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests: {cpu: 50m, memory: {{ app.memory_request }}}
+            limits: {memory: {{ app.memory_limit }}}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+{% if app.data %}
+            - {name: data, mountPath: /data}   # downloads/ and media/ on ONE mount, so importing a download is a hardlink, not a copy
+{% endif %}
+      volumes:
+        - name: config
+          persistentVolumeClaim: {claimName: {{ app.name }}-config}
+{% if app.data %}
+        - name: data
+          persistentVolumeClaim: {claimName: media-data}
+{% endif %}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ app.name }}
+  namespace: {{ media_namespace }}
+spec:
+  selector:
+    app: {{ app.name }}
+  ports:
+    - {name: http, port: {{ app.port }}, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ app.name }}
+  namespace: {{ media_namespace }}
+spec:
+  ingressClassName: {{ arr_ingress_class }}
+  rules:
+    - host: {{ app.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ app.name }}
+                port:
+                  name: http
+{% endfor %}

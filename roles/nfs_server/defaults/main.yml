@@ -7,6 +7,7 @@ nfs_server_extra_dirs:
   - backups
   - backups/jellyfin
   - backups/etcd
+  - backups/arr
 # Folders created inside the SSD's appdata export.
 # (the Jellyfin ones come from jellyfin_persisted_dirs in group_vars/all/media.yml)
 nfs_server_appdata_dirs: "{{ ['jellyfin'] + (jellyfin_persisted_dirs | map(attribute='subpath') | list) }}"

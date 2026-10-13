@@ -1,0 +1,11 @@
+---
+- name: "Wait until this app answers: {{ target.key }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/ping"
+    headers:
+      Host: "{{ target.value.host }}"
+  register: arr_wait
+  until: arr_wait.status is defined and arr_wait.status == 200
+  retries: "{{ arr_provision_retries }}"
+  delay: 5
+  changed_when: false

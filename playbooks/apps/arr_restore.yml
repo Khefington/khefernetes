@@ -1,0 +1,21 @@
+---
+# Put the newest backup zip of Sonarr, Radarr and Prowlarr back (their databases: series and movies, history, settings), then
+# re-apply the settings from Git. Asks you to type RESTORE.
+#   make arr-restore
+#   make arr-restore ARGS="-e arr_restore_apps=[sonarr]"      only one app
+#   make arr-restore ARGS="-e arr_restore_provision=false"     restore only; no provision afterwards
+- name: Restore the apps' databases
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  tasks:
+    - name: Stop, restore, start
+      ansible.builtin.import_role:
+        name: arr_backup
+        tasks_from: restore.yml
+
+- name: Re-apply the settings from Git
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - role: arr_provision
+      when: arr_restore_provision | default(true) | bool

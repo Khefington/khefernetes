@@ -1,0 +1,40 @@
+---
+# Configure the download stack through its APIs, in the order a person would click through it.
+# Every step looks at what exists first and only changes what differs, so it is safe to re-run.
+# The calls run on the machine running Ansible and go through the ingress (like a browser); only reading qBittorrent's
+# first-start password out of its log uses kubectl on the control plane.
+- name: Talk to the apps' APIs
+  delegate_to: localhost
+  become: false
+  module_defaults:
+    ansible.builtin.uri:
+      return_content: true
+      use_proxy: false
+      timeout: 60
+  block:
+    - name: Wait until every app answers
+      ansible.builtin.include_tasks: wait.yml
+      loop: "{{ arr_provision_targets | dict2items }}"
+      loop_control:
+        loop_var: target
+        label: "{{ target.key }}"
+
+    - name: Set up qBittorrent (login, preferences, categories)
+      ansible.builtin.include_tasks: qbittorrent.yml
+
+    - name: Sonarr and Radarr
+      ansible.builtin.include_tasks: servarr.yml
+      loop: [sonarr, radarr]
+      loop_control:
+        loop_var: app
+
+    - name: Prowlarr (login, applications, indexers)
+      ansible.builtin.include_tasks: prowlarr.yml
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "qBittorrent: preferences changed {{ arr_qb_changed_keys | default([]) }}, categories {{ arr_qbittorrent_categories.keys() | list }}"
+          - "Sonarr root folders: {{ arr_sonarr_root_folders }}   Radarr root folders: {{ arr_radarr_root_folders }}"
+          - "Prowlarr indexers declared in Git: {{ arr_prowlarr_indexers | map(attribute='name') | list }}"
+          - "Sign in at http://{{ sonarr_hostname }} (also radarr, prowlarr, qbittorrent) as {{ arr_admin_user }} with vault_arr_password."

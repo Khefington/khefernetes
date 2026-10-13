@@ -107,3 +107,7 @@
       {{ '[OK]   a pod in another namespace cannot reach Jellyfin'
          if '200' not in k8s_hardening_p_other.stdout
          else '[WARN] a pod in another namespace CAN reach Jellyfin: the ingress policy is not being enforced' }}
+
+- name: Download stack probes
+  ansible.builtin.include_tasks: probes_arr.yml
+  when: k8s_hardening_arr_present | bool

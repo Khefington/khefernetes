@@ -1,0 +1,21 @@
+---
+# Deploy the download stack: qBittorrent behind a NordVPN tunnel (namespace downloads) and Sonarr, Radarr, Prowlarr (namespace media).
+# Needs `make nfs`, `make k8s-storage` and the vault secrets from docs/runbooks/download-stack.md.
+#   make arr
+- name: Resolve the storage paths
+  ansible.builtin.import_playbook: ../common/storage_paths.yml
+
+- name: Make sure the HDD folders exist (downloads/, backups/arr)
+  hosts: proxmox
+  gather_facts: false
+  tasks:
+    - name: Create the folder tree
+      ansible.builtin.import_role:
+        name: nfs_server
+        tasks_from: tree.yml
+
+- name: Deploy the stack
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - arr_stack

@@ -1,0 +1,13 @@
+---
+# Configure Sonarr, Radarr, Prowlarr and qBittorrent from Git: sign-in, qBittorrent preferences and categories, root folders,
+# the download client, Prowlarr's links to Sonarr/Radarr and the indexers listed in arr_prowlarr_indexers.
+#   make arr-provision
+#   make arr-provision ARGS="-e arr_provision_force=true"                     re-send passwords/keys after changing them in the vault
+#   make arr-provision ARGS="-e arr_show_indexer_definitions=true"            list the indexer definitions Prowlarr knows
+#   make arr-provision ARGS="-e arr_show_indexer_fields=Torznab"              list the fields of one definition
+# Needs `make arr` first. Safe to repeat.
+- name: Configure the download stack
+  hosts: anvil_control_planes[0]
+  gather_facts: false
+  roles:
+    - arr_provision

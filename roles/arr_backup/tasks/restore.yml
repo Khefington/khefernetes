@@ -1,0 +1,43 @@
+---
+# make arr-restore: stop the three apps, put the newest backup zip of each back into its config volume, start them again.
+- name: Ask for confirmation
+  ansible.builtin.pause:
+    prompt: >-
+      This REPLACES the databases of {{ arr_restore_apps | join(', ') }} (series and movies, history, settings) with the newest backup zip of each
+      from the backup folder. The apps are stopped for a minute or two. An app with no backup zip is left as it is. Type RESTORE to continue
+  register: arr_restore_answer
+  when: arr_restore_confirm | length == 0
+
+- name: Stop unless the word was typed exactly
+  ansible.builtin.assert:
+    that: (arr_restore_confirm if arr_restore_confirm | length > 0 else arr_restore_answer.user_input) == 'RESTORE'
+    fail_msg: Nothing was restored.
+    quiet: true
+
+- name: Stop the apps
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/{{ item }} --replicas=0"
+  loop: "{{ arr_restore_apps }}"
+  changed_when: true
+
+- name: Wait until their pods are gone
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} wait --for=delete pod -l app={{ item }} --timeout=120s"
+  loop: "{{ arr_restore_apps }}"
+  changed_when: false
+
+- name: Restore each app
+  block:
+    - name: Run the restore job
+      ansible.builtin.include_tasks: restore_one.yml
+      loop: "{{ arr_restore_apps }}"
+      loop_control:
+        loop_var: arr_restore_app
+  always:
+    - name: Start the apps again (also when a restore failed, so nothing stays stopped)
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} scale deployment/{{ item }} --replicas=1"
+      loop: "{{ arr_restore_apps }}"
+      changed_when: true
+
+- name: Wait until they are ready
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} rollout status deployment/{{ item }} --timeout=300s"
+  loop: "{{ arr_restore_apps }}"
+  changed_when: false

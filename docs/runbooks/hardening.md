@@ -68,6 +68,7 @@ After the VMs: every node must be Ready and the NFS port on castellan reachable 
 | Namespace | Level | Why |
 |---|---|---|
 | `media` | enforce `baseline`, audit `restricted` | Jellyfin's start-up helper runs as root to fix ownership, so `restricted` is not possible yet; `audit` records what stops us. No privileged containers, host networking or hostPath here. |
+| `downloads` | `privileged` (explicit) | Gluetun (the VPN client in qBittorrent's pod) needs `NET_ADMIN` and the tun device, which `baseline` forbids. Only that namespace gets this, and it is sealed by its own policies (below). |
 | `intel-gpu-plugin`, `local-path-storage`, `metallb-system` | `privileged` (explicit) | They need host access by design. Written down instead of left implicit. |
 
 **NetworkPolicies in `media`** (Canal enforces them): default-deny for every pod, then only:
@@ -75,7 +76,9 @@ After the VMs: every node must be Ready and the NFS port on castellan reachable 
 - Into Jellyfin (8096): the ingress controller, the backup job, and the cluster's own nodes (so restore / profile-fix / the audit keep working).
 - Out of Jellyfin: the internet on 80/443 only, **not** your LAN (router, castellan, the Proxmox UI), not other pods.
 - The backup job: only to Jellyfin.
-Adding an app later (qBittorrent, the arr stack): its pods are denied everything until its own policy is added next to these; copy a `jellyfin-*` block.
+Download stack (when `arr_enabled` and the `downloads` namespace exists): Sonarr, Radarr and Prowlarr may be reached by the ingress controller, each other, the backup job and the nodes; they may go out to the internet on 80/443, to each other and to qBittorrent on 8080, not to your LAN. The backup job reaches only the three apps.
+`downloads` is **sealed**: default-deny both ways; qBittorrent's web port (8080) is reachable from the ingress controller, the three apps and the nodes; and it may send only UDP 51820 to non-private addresses, which is the WireGuard tunnel to NordVPN (no DNS to the cluster, no LAN, no other pods). That is the second lock under Gluetun's own firewall.
+Adding another app later: its pods are denied everything until its own policy is added next to these; copy a `jellyfin-*` or `arr-*` block.
 
 **The proofs after applying:** (critical, roll back if they fail) the web through 192.168.1.200 answers; the control plane can reach Jellyfin directly; Jellyfin can resolve names and reach the internet; the backup job's path works. (reported) Jellyfin must NOT reach 192.168.1.1 or castellan:8006; a pod in another namespace must NOT reach Jellyfin. A `[WARN] ... CAN reach` there means the policy is not being enforced.
 

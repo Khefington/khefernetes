@@ -1,0 +1,145 @@
+---
+# qBittorrent has no API key: a session cookie after a login. A fresh qBittorrent has user "admin" and a one-time password that it
+# prints in its log; the first run reads it from there, sets the real user and password from the vault, and never needs the log again.
+- name: Log in with the vault password
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/auth/login"
+    method: POST
+    body_format: form-urlencoded
+    body: {username: "{{ arr_admin_user }}", password: "{{ vault_arr_password }}"}
+    headers: "{{ arr_qb_headers }}"
+  register: arr_qb_login
+  changed_when: false
+  no_log: true
+
+- name: "First start (the vault login did not work): bootstrap the real user and password"
+  when: arr_qb_login.content | default('') | trim != 'Ok.'
+  block:
+    - name: Read the one-time password from the log
+      ansible.builtin.command: "{{ kubectl_cmd }} -n {{ arr_vpn_namespace }} logs deploy/qbittorrent -c qbittorrent --tail=500"
+      delegate_to: "{{ groups['anvil_control_planes'][0] }}"
+      become: false
+      register: arr_qb_log
+      changed_when: false
+      no_log: true
+
+    - name: Pick it out
+      ansible.builtin.set_fact:
+        arr_qb_temp_password: "{{ arr_qb_log.stdout | regex_findall('temporary password[^:]*:\\s*(\\S+)') | last | default('') }}"
+      no_log: true
+
+    - name: Stop with a helpful message if there is none
+      ansible.builtin.assert:
+        that: arr_qb_temp_password | length > 0
+        quiet: true
+        fail_msg: >-
+          Could not sign in to qBittorrent with the vault password (user {{ arr_admin_user }}), and its log shows no one-time password.
+          If you changed vault_arr_password after the first run, sign in with the old password, change it in qBittorrent
+          (Tools > Options > Web UI), or delete the qbittorrent-config volume to start over.
+
+    - name: Log in with the one-time password
+      ansible.builtin.uri:
+        url: "{{ arr_provision_url }}/api/v2/auth/login"
+        method: POST
+        body_format: form-urlencoded
+        body: {username: admin, password: "{{ arr_qb_temp_password }}"}
+        headers: "{{ arr_qb_headers }}"
+      register: arr_qb_login_temp
+      failed_when: false
+      no_log: true
+
+    - name: Stop with a helpful message if that did not work either
+      ansible.builtin.assert:
+        that: arr_qb_login_temp.content | default('') | trim == 'Ok.'
+        quiet: true
+        fail_msg: >-
+          qBittorrent accepted neither the vault password (user {{ arr_admin_user }}) nor the one-time password from its log
+          (the answer was: {{ arr_qb_login_temp.content | default(arr_qb_login_temp.msg | default('nothing')) | trim }}).
+          The one-time password only works until the first real password is set. If vault_arr_password was changed after the first run,
+          change it in qBittorrent (Tools > Options > Web UI) or delete the qbittorrent-config volume and run `make arr` again.
+          After 5 wrong tries qBittorrent blocks the sender for a while; restarting its pod clears that.
+
+    - name: Set the real user and password
+      ansible.builtin.uri:
+        url: "{{ arr_provision_url }}/api/v2/app/setPreferences"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          json: "{{ {'web_ui_username': arr_admin_user, 'web_ui_password': vault_arr_password} | to_json }}"
+        headers: "{{ arr_qb_headers | combine({'Cookie': 'SID=' ~ arr_qb_login_temp.cookies.SID}) }}"
+      changed_when: true
+      no_log: true
+
+    - name: Log in again with the real password
+      ansible.builtin.uri:
+        url: "{{ arr_provision_url }}/api/v2/auth/login"
+        method: POST
+        body_format: form-urlencoded
+        body: {username: "{{ arr_admin_user }}", password: "{{ vault_arr_password }}"}
+        headers: "{{ arr_qb_headers }}"
+      register: arr_qb_login_new # (not arr_qb_login: a skipped task would overwrite that result)
+      failed_when: arr_qb_login_new.content | default('') | trim != 'Ok.'
+      no_log: true
+
+- name: Remember the session
+  ansible.builtin.set_fact:
+    arr_qb_session: >-
+      {{ arr_qb_headers | combine({'Cookie': 'SID=' ~ ((arr_qb_login_new if arr_qb_login_new.cookies is defined else arr_qb_login).cookies.SID)}) }}
+  no_log: true
+
+- name: Read the preferences
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/app/preferences"
+    headers: "{{ arr_qb_session }}"
+  register: arr_qb_prefs
+  changed_when: false
+  no_log: true
+
+- name: Work out which preferences differ
+  ansible.builtin.set_fact:
+    arr_qb_changed: "{{ arr_qb_prefs.json | arr_dict_diff(arr_qbittorrent_default_preferences | combine(arr_qbittorrent_preferences)) }}"
+    arr_qb_changed_keys: "{{ (arr_qb_prefs.json | arr_dict_diff(arr_qbittorrent_default_preferences | combine(arr_qbittorrent_preferences))).keys() | list }}"
+
+- name: Apply them
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/app/setPreferences"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      json: "{{ arr_qb_changed | to_json }}"
+    headers: "{{ arr_qb_session }}"
+  when: arr_qb_changed | length > 0
+  changed_when: true
+
+- name: Read the categories
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/torrents/categories"
+    headers: "{{ arr_qb_session }}"
+  register: arr_qb_cats
+  changed_when: false
+
+- name: Create the missing categories (a category decides the folder a download lands in)
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/torrents/createCategory"
+    method: POST
+    body_format: form-urlencoded
+    body: {category: "{{ item.key }}", savePath: "{{ item.value }}"}
+    headers: "{{ arr_qb_session }}"
+  loop: "{{ arr_qbittorrent_categories | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key not in arr_qb_cats.json
+  changed_when: true
+
+- name: Fix the folder of categories that exist but point elsewhere
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v2/torrents/editCategory"
+    method: POST
+    body_format: form-urlencoded
+    body: {category: "{{ item.key }}", savePath: "{{ item.value }}"}
+    headers: "{{ arr_qb_session }}"
+  loop: "{{ arr_qbittorrent_categories | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.key in arr_qb_cats.json and arr_qb_cats.json[item.key].savePath != item.value
+  changed_when: true

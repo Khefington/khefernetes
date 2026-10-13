@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: arr_stack
+  author: khefernetes
+  description: "Deploy qBittorrent (behind a Gluetun/NordVPN WireGuard tunnel), Sonarr, Radarr and Prowlarr into Kubernetes"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

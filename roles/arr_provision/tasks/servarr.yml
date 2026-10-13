@@ -1,0 +1,69 @@
+---
+# Sonarr or Radarr. Needs: app.
+- name: "Sign-in: {{ app }}"
+  ansible.builtin.include_tasks: host_config.yml
+
+# Settings > Media Management: merged over what the app has (only the keys listed in arr_media_management are touched).
+- name: "Read Media Management: {{ app }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v3/config/mediamanagement"
+    headers:
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+  register: arr_mm
+  changed_when: false
+
+- name: "Apply Media Management when it differs: {{ app }}"
+  vars:
+    arr_wanted_mm: "{{ arr_sonarr_media_management if app == 'sonarr' else arr_radarr_media_management }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v3/config/mediamanagement/{{ arr_mm.json.id }}"
+    method: PUT
+    headers:
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+    body_format: json
+    body: "{{ arr_mm.json | combine(arr_wanted_mm) }}"
+    status_code: [200, 201, 202]
+  when: (arr_mm.json | arr_dict_diff(arr_wanted_mm)) | length > 0
+  changed_when: true
+
+# Root folders (paths inside the container; the folders exist because `make nfs` created data/media/<library>).
+- name: "Read the root folders: {{ app }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v3/rootfolder"
+    headers:
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+  register: arr_roots
+  changed_when: false
+
+- name: "Add the missing root folders: {{ app }}"
+  vars:
+    arr_wanted_roots: "{{ arr_sonarr_root_folders if app == 'sonarr' else arr_radarr_root_folders }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/v3/rootfolder"
+    method: POST
+    headers:
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+    body_format: json
+    body: {path: "{{ item }}"}
+    status_code: [200, 201, 202]
+  loop: "{{ arr_wanted_roots | difference(arr_roots.json | map(attribute='path') | map('regex_replace', '/$', '') | list) }}"
+  changed_when: true
+
+# The download client: qBittorrent, reached by its in-cluster name. Category = the library name, so finished files land in
+# /data/downloads/<category> and are hardlinked into /data/media/<library>.
+- name: "The download client: {{ app }}"
+  ansible.builtin.include_tasks: resource.yml
+  vars:
+    res_path: downloadclient
+    res_schema_key: implementation
+    res_schema_value: QBittorrent
+    res_name: qBittorrent
+    res_fields: >-
+      {{ {'host': arr_provision_qbittorrent_host, 'port': arr_provision_qbittorrent_port, 'useSsl': false,
+          'username': arr_admin_user, 'password': vault_arr_password}
+         | combine({'tvCategory': 'tv'} if app == 'sonarr' else {'movieCategory': 'movies'}) }}
+    res_props: {enable: true, priority: 1, removeCompletedDownloads: true, removeFailedDownloads: true, tags: []}

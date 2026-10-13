@@ -106,3 +106,173 @@ spec:
               app: jellyfin
       ports:
         - {protocol: TCP, port: 8096}
+{% if k8s_hardening_arr_present | bool %}
+# =====================================================================================================================
+# The download stack (role arr_stack). Sonarr, Radarr, Prowlarr in the media namespace; the downloader in its own namespace.
+# =====================================================================================================================
+---
+# Who may reach Sonarr / Radarr / Prowlarr: the ingress controller (your browser), the apps among themselves, the backup job,
+# and the cluster's own nodes (kubelet probes).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arr-ingress
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ k8s_hardening_ingress_namespace }}
+          podSelector:
+            matchLabels:
+{% for k, v in k8s_hardening_ingress_pod_labels[ingress_controller].items() %}
+              {{ k }}: {{ v }}
+{% endfor %}
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}, arr-backup]}
+{% for cidr in k8s_hardening_node_cidrs %}
+        - ipBlock:
+            cidr: {{ cidr }}
+{% endfor %}
+      ports:
+{% for p in k8s_hardening_arr_ports %}
+        - {protocol: TCP, port: {{ p }}}
+{% endfor %}
+---
+# The apps may go out to the internet on the web ports (metadata, indexers, update checks), to each other, and to the downloader. Not to your LAN.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arr-egress
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+{% for cidr in k8s_hardening_private_ranges %}
+              - {{ cidr }}
+{% endfor %}
+      ports:
+{% for p in k8s_hardening_internet_ports %}
+        - {protocol: TCP, port: {{ p }}}
+{% endfor %}
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}]}
+      ports:
+{% for p in k8s_hardening_arr_ports %}
+        - {protocol: TCP, port: {{ p }}}
+{% endfor %}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ arr_vpn_namespace }}
+          podSelector:
+            matchLabels:
+              app: qbittorrent
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# The nightly arr backup job only talks to the three apps.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: arr-backup-egress
+  namespace: {{ media_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: arr-backup
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}]}
+      ports:
+{% for p in k8s_hardening_arr_ports %}
+        - {protocol: TCP, port: {{ p }}}
+{% endfor %}
+---
+# ---- the downloader's namespace: sealed ----
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# qBittorrent's web page (8080): the ingress controller, the three apps, and the nodes (probes, the control plane's calls).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qbittorrent-ingress
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: qbittorrent
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ k8s_hardening_ingress_namespace }}
+          podSelector:
+            matchLabels:
+{% for k, v in k8s_hardening_ingress_pod_labels[ingress_controller].items() %}
+              {{ k }}: {{ v }}
+{% endfor %}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ media_namespace }}
+          podSelector:
+            matchExpressions:
+              - {key: app, operator: In, values: [{{ k8s_hardening_arr_apps | join(', ') }}]}
+{% for cidr in k8s_hardening_node_cidrs %}
+        - ipBlock:
+            cidr: {{ cidr }}
+{% endfor %}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+# The second lock on the kill switch: besides Gluetun's own firewall, the cluster lets this pod send nothing but the WireGuard tunnel
+# to NordVPN. No DNS to the cluster, no LAN, no other pods. (Replies to the connections above are allowed automatically.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qbittorrent-egress-tunnel-only
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: qbittorrent
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+{% for cidr in k8s_hardening_private_ranges %}
+              - {{ cidr }}
+{% endfor %}
+      ports:
+{% for p in k8s_hardening_arr_vpn_egress %}
+        - {protocol: {{ p.protocol }}, port: {{ p.port }}}
+{% endfor %}
+{% endif %}

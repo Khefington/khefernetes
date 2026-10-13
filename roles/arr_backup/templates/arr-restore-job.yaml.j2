@@ -1,0 +1,58 @@
+# Managed by Ansible (khefernetes, role arr_backup). A short-lived Job: puts the newest backup zip of one app back into its config volume.
+# The app is stopped while this runs. Needs: arr_restore_app.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: arr-restore-{{ arr_restore_app }}
+  namespace: {{ media_namespace }}
+  labels:
+    app: arr-restore
+    khefernetes/stack: arr
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: arr-restore
+        khefernetes/stack: arr
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ media_uid }}
+        runAsGroup: {{ media_gid }}
+        fsGroup: {{ media_gid }}
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: {{ arr_backup_image }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              app={{ arr_restore_app }}
+              zip=$(ls -1t /backups/$app-*.zip 2>/dev/null | head -n 1 || true)
+              if [ -z "$zip" ]; then echo "NO BACKUP of $app found in the backup folder: nothing to restore"; exit 0; fi
+              echo "restoring $app from $(basename "$zip")"
+              rm -f /config/$app.db /config/$app.db-wal /config/$app.db-shm /config/$app.db-journal
+              unzip -o "$zip" -d /config
+              ls -l /config
+              echo "RESTORED $app"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: data, mountPath: /backups, subPath: {{ arr_backup_folder }}, readOnly: true}
+      volumes:
+        - name: config
+          persistentVolumeClaim: {claimName: {{ arr_restore_app }}-config}
+        - name: data
+          persistentVolumeClaim: {claimName: media-data}

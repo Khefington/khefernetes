@@ -1,0 +1,88 @@
+# Managed by Ansible (khefernetes, role arr_backup). Edit the template, not the cluster.
+# Asks each app to make its own backup (Settings > General > Backups > "Backup Now"; a zip holding its database and config.xml),
+# downloads the new zip through the app's API and keeps it on the HDD, next to Jellyfin's backups. The API keys come from the Secret arr-secrets.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: arr-backup
+  namespace: {{ media_namespace }}
+spec:
+  schedule: "{{ arr_backup_schedule }}"
+  timeZone: {{ timezone }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app: arr-backup
+            khefernetes/stack: arr
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ media_uid }}
+            runAsGroup: {{ media_gid }}
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: {{ arr_backup_image }}
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  stamp=$(date +%Y%m%d-%H%M%S)
+                  failed=0
+                  for spec in {% for a in arr_backup_apps %}{{ a.name }}:{{ a.port }}:{{ a.api }}:{{ a.secret_key | upper | replace('-', '_') }} {% endfor %}; do
+                    app=${spec%%:*}; rest=${spec#*:}; port=${rest%%:*}; rest=${rest#*:}; api=${rest%%:*}; keyvar=${rest#*:}
+                    key=$(printenv "$keyvar")
+                    base="http://$app:$port"
+                    echo "== $app"
+                    # the newest 'manual' backup the app lists (names carry a timestamp, so the last in sort order is the newest)
+                    newest() { wget -q -O - --header "X-Api-Key: $key" "$base/api/$api/system/backup" | grep -o '"path": *"[^"]*/manual/[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' | sort | tail -n 1; }
+                    before=$(newest || true)
+                    wget -q -O /dev/null --header "X-Api-Key: $key" --header 'Content-Type: application/json' --post-data '{"name":"Backup"}' "$base/api/$api/command" || { echo "  $app did not accept the backup command"; failed=1; continue; }
+                    n=0; path=""
+                    while [ $n -lt 60 ]; do
+                      path=$(newest || true)
+                      [ -n "$path" ] && [ "$path" != "$before" ] && break
+                      path=""; n=$((n + 1)); sleep 5
+                    done
+                    [ -n "$path" ] || { echo "  no new backup appeared for $app"; failed=1; continue; }
+                    out="/dest/$app-$stamp.zip"
+                    wget -q -O "$out.partial" --header "X-Api-Key: $key" "$base$path" || { echo "  download failed"; rm -f "$out.partial"; failed=1; continue; }
+                    [ -s "$out.partial" ] || { echo "  the downloaded file is empty"; rm -f "$out.partial"; failed=1; continue; }
+                    mv "$out.partial" "$out"
+                    echo "  saved $(basename "$out") ($(wc -c < "$out") bytes) from $path"
+                    ls -1t /dest/$app-*.zip 2>/dev/null | tail -n +$(( {{ arr_backup_keep }} + 1 )) | while read -r old; do echo "  removing $old"; rm -f "$old"; done
+                  done
+                  [ "$failed" = 0 ] && echo Done. || { echo "Some backups failed (see above)."; exit 1; }
+              env:
+{% for a in arr_backup_apps %}
+                - name: {{ a.secret_key | upper | replace('-', '_') }}
+                  valueFrom:
+                    secretKeyRef: {name: arr-secrets, key: {{ a.secret_key }}}
+{% endfor %}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              resources:
+                requests: {cpu: 10m, memory: 16Mi}
+                limits: {memory: 128Mi}
+              volumeMounts:
+                - {name: data, mountPath: /dest, subPath: {{ arr_backup_folder }}}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: media-data}
+            - name: tmp
+              emptyDir: {sizeLimit: 16Mi}

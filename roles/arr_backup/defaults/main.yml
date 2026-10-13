@@ -1,0 +1,21 @@
+---
+arr_backup_schedule: "40 5 * * *" # every night at 05:40 (cluster timezone), after Jellyfin's 05:30 backup
+arr_backup_keep: 14 # newest N zips of each app are kept
+arr_backup_image: "{{ storage_test_image }}" # busybox: wget, grep, sort, unzip; nothing else is needed
+arr_backup_manifest_path: "{{ k8s_app_manifest_dir }}/arr-backup.yaml"
+arr_backup_run_now: false # -e arr_backup_run_now=true runs one backup immediately as a test
+arr_backup_wait_seconds: 600
+arr_backup_folder: backups/arr # on the data share (HDD): <hdd>/data/backups/arr/<app>-<date>.zip
+
+# make arr-restore
+arr_restore_confirm: "" # -e arr_restore_confirm=RESTORE skips the question (for scripts)
+arr_restore_provision: true # run `make arr-provision` afterwards
+arr_restore_apps: [sonarr, radarr, prowlarr]
+arr_restore_wait_seconds: 180
+arr_restore_manifest_path: "{{ k8s_app_manifest_dir }}/arr-restore-job.yaml"
+
+# The three apps: service name, port, API version, and the Secret key that holds the API key.
+arr_backup_apps:
+  - {name: sonarr, port: 8989, api: v3, secret_key: sonarr-api-key}
+  - {name: radarr, port: 7878, api: v3, secret_key: radarr-api-key}
+  - {name: prowlarr, port: 9696, api: v1, secret_key: prowlarr-api-key}

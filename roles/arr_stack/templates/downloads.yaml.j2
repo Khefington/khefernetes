@@ -1,0 +1,234 @@
+# Managed by Ansible (khefernetes, role arr_stack). Edit the template, not the cluster.
+# The downloader: qBittorrent and Gluetun (the NordVPN WireGuard client) in ONE pod, so they share one network.
+# Gluetun's firewall lets nothing leave except through the tunnel, and its DNS is the only DNS qBittorrent can use:
+# if the tunnel drops, qBittorrent has no connection at all (no leak), and it never asks your router or the cluster for names.
+#
+# Same shares as Jellyfin, as separate volumes (a PersistentVolume binds to one claim in one namespace):
+#   downloads/   finished downloads, per category (the part of the data share qBittorrent may touch; it cannot see the library)
+#   /incomplete  the SSD, for downloads in progress
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: downloads-data
+spec:
+  capacity:
+    storage: {{ arr_data_capacity }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain   # deleting the claim NEVER deletes the files
+  storageClassName: nfs-static
+  mountOptions: [nfsvers=4.2, hard, noatime]
+  nfs:
+    server: {{ arr_nfs_server_ip }}
+    path: {{ arr_data_export_path }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: downloads-data
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-static
+  volumeName: downloads-data
+  resources:
+    requests:
+      storage: {{ arr_data_capacity }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: downloads-incomplete
+spec:
+  capacity:
+    storage: {{ arr_staging_capacity }}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-static
+  mountOptions: [nfsvers=4.2, hard, noatime]
+  nfs:
+    server: {{ arr_nfs_server_ip }}
+    path: {{ arr_staging_export_path }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: downloads-incomplete
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: nfs-static
+  volumeName: downloads-incomplete
+  resources:
+    requests:
+      storage: {{ arr_staging_capacity }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qbittorrent-config
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: {{ arr_qbittorrent_config_size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: {{ arr_vpn_namespace }}
+  labels:
+    app: qbittorrent
+    khefernetes/stack: arr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # also what Gluetun's Kubernetes notes ask for: two pods must never share routing rules
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+        khefernetes/stack: arr
+    spec:
+      automountServiceAccountToken: false
+      # Every container in the pod uses Gluetun's own DNS resolver (127.0.0.1, inside the tunnel), not the cluster's or the router's.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: [127.0.0.1]
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      containers:
+        - name: gluetun
+          image: {{ arr_gluetun_image }}
+          env:
+            - {name: VPN_SERVICE_PROVIDER, value: nordvpn}
+            - {name: VPN_TYPE, value: wireguard}
+            - {name: SERVER_COUNTRIES, value: {{ arr_vpn_country | to_json }}}
+            - name: WIREGUARD_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef: {name: vpn-secrets, key: wireguard-private-key}
+            # qBittorrent's web page (8080) may be reached over the normal interface; the cluster's networks may be answered over it.
+            # Nothing else is allowed out except through the tunnel.
+            - {name: FIREWALL_INPUT_PORTS, value: "8080"}
+            - {name: FIREWALL_OUTBOUND_SUBNETS, value: "{{ arr_pod_cidr }},{{ arr_service_cidr }}"}
+            # Gluetun's control server is not needed here; keep it on loopback.
+            - {name: HTTP_CONTROL_SERVER_ADDRESS, value: "127.0.0.1:8000"}
+            - {name: TZ, value: {{ timezone }}}
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "(ip rule del table 51820; ip -6 rule del table 51820) || true"]   # Gluetun's Kubernetes notes
+          securityContext:
+{% if arr_vpn_privileged | bool %}
+            privileged: true
+{% else %}
+            # Exactly what Gluetun's Kubernetes notes ask for: the runtime's normal capabilities plus NET_ADMIN. Not "drop ALL":
+            # Gluetun (root) needs NET_RAW for iptables and MKNOD to make the tun device node if the node has none.
+            capabilities:
+              add: [NET_ADMIN]
+{% endif %}
+          # Ready only once the tunnel works: Gluetun's own health server (127.0.0.1:9999) answers 200 when it does.
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-c", "wget -q -O /dev/null http://127.0.0.1:9999"]
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "wget -q -O /dev/null http://127.0.0.1:9999"]
+            periodSeconds: 15
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          volumeMounts:
+            - {name: tun, mountPath: /dev/net/tun}
+            - {name: gluetun, mountPath: /gluetun}
+        - name: qbittorrent
+          image: {{ arr_qbittorrent_image }}
+          env:
+            - {name: PUID, value: "{{ media_uid }}"}
+            - {name: PGID, value: "{{ media_gid }}"}
+            - {name: UMASK, value: "002"}
+            - {name: TZ, value: {{ timezone }}}
+            - {name: WEBUI_PORTS, value: "8080/tcp"}
+          ports:
+            - {name: http, containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]   # the image starts as root, fixes /config, then drops to the media user
+          startupProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {memory: 4Gi}
+          volumeMounts:
+            - {name: config, mountPath: /config}
+            - {name: data, mountPath: /data/downloads, subPath: downloads}   # only the downloads folder: the library is out of its reach
+            - {name: incomplete, mountPath: /incomplete}
+      volumes:
+        - name: config
+          persistentVolumeClaim: {claimName: qbittorrent-config}
+        - name: data
+          persistentVolumeClaim: {claimName: downloads-data}
+        - name: incomplete
+          persistentVolumeClaim: {claimName: downloads-incomplete}
+        - name: gluetun
+          emptyDir: {}
+        - name: tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  selector:
+    app: qbittorrent
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qbittorrent
+  namespace: {{ arr_vpn_namespace }}
+spec:
+  ingressClassName: {{ arr_ingress_class }}
+  rules:
+    - host: {{ qbittorrent_hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qbittorrent
+                port:
+                  name: http

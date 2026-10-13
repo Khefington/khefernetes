@@ -1,0 +1,65 @@
+---
+# The download stack: qBittorrent (behind a NordVPN tunnel), Sonarr, Radarr, Prowlarr.
+# Runbook: docs/runbooks/download-stack.md.   make arr > make arr-provision > make arr-backup
+# Passwords and keys come from the vault (vault_arr_*, vault_nordvpn_*); see docs/examples/vault.example.yml.
+arr_enabled: true # false = site.yml and rebuild.yml skip the whole stack
+
+# The three apps sit next to Jellyfin in the `media` namespace. The downloader gets its own namespace because Gluetun needs
+# NET_ADMIN, which the `media` namespace's pod-security level forbids; network policies (make cluster-hardening) keep it sealed.
+arr_vpn_namespace: downloads
+
+# --- Addresses (LAN only; castellan's DNS answers *.home.lan with the ingress address) ----------------------------------
+sonarr_hostname: "sonarr.{{ lan_domain }}"
+radarr_hostname: "radarr.{{ lan_domain }}"
+prowlarr_hostname: "prowlarr.{{ lan_domain }}"
+qbittorrent_hostname: "qbittorrent.{{ lan_domain }}"
+
+# One account for all four web pages. The password is vault_arr_password.
+arr_admin_user: khef
+
+# --- The VPN tunnel (Gluetun) -------------------------------------------------------------------------------------------
+# Only the downloader goes through it. Country names are the ones NordVPN uses (https://nordvpn.com/servers/tools/).
+arr_vpn_country: United States
+# Where the cluster's pod and service networks are (RKE2 defaults). The VPN pod is allowed to answer these over its normal
+# interface; everything else must leave through the tunnel or not at all.
+arr_pod_cidr: 10.42.0.0/16
+arr_service_cidr: 10.43.0.0/16
+
+# --- What the apps are set up with (applied by `make arr-provision`) ----------------------------------------------------
+# Same absolute paths in every container, so no remote path mapping is needed:
+#   /data/downloads/<category>   finished downloads (qBittorrent writes, Sonarr/Radarr read)
+#   /data/media/<library>        the library (Sonarr/Radarr hardlink into it, Jellyfin reads it)
+#   /incomplete                  in-progress downloads on the SSD (qBittorrent only)
+arr_qbittorrent_categories:
+  tv: /data/downloads/tv
+  movies: /data/downloads/movies
+
+# Extra qBittorrent preferences, merged over the defaults in roles/arr_provision/defaults/main.yml (Preferences API names).
+arr_qbittorrent_preferences: {}
+
+# Sonarr / Radarr: root folders (inside the container) and settings merged into Settings > Media Management (only the keys listed
+# are touched; the names are the app's API names).
+arr_sonarr_root_folders: [/data/media/tv]
+arr_radarr_root_folders: [/data/media/movies]
+arr_sonarr_media_management:
+  copyUsingHardlinks: true # a finished download is hardlinked into the library: one copy on disk, seeding continues
+  deleteEmptyFolders: true
+  createEmptySeriesFolders: false
+  importExtraFiles: false
+arr_radarr_media_management:
+  copyUsingHardlinks: true
+  deleteEmptyFolders: true
+  createEmptyMovieFolders: false
+  importExtraFiles: false
+
+# --- Indexers (Prowlarr) --------------------------------------------------------------------------------------------------
+# Declared here, secrets in the vault. Prowlarr pushes them to Sonarr and Radarr by itself (full sync).
+#   definition: the indexer's definition name (list them with: make arr-provision ARGS="-e arr_show_indexer_definitions=true")
+#   fields:     the settings page's fields by their API names (shown with arr_show_indexer_fields=<definition>)
+# Example (a public Torznab-style indexer with an API key):
+#   - name: My Indexer
+#     definition: Torznab
+#     fields:
+#       baseUrl: "https://indexer.example/api"
+#       apiKey: "{{ vault_my_indexer_api_key }}"
+arr_prowlarr_indexers: []

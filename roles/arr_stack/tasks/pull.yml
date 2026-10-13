@@ -1,0 +1,14 @@
+---
+# Pull every image on every worker with crictl (the apps can land on either). A bad tag fails here, before any manifest is applied.
+- name: Pull the images
+  ansible.builtin.command: >-
+    {{ arr_crictl }} --runtime-endpoint {{ arr_containerd_socket }} pull {{ item.1 }}
+  delegate_to: "{{ item.0 }}"
+  become: true
+  loop: "{{ groups['anvil_workers'] | product(arr_stack_images) | list }}"
+  loop_control:
+    label: "{{ item.0 }}: {{ item.1 }}"
+  register: arr_pull
+  changed_when: "'already' not in arr_pull.stdout | lower"
+  vars:
+    arr_stack_images: "{{ [arr_gluetun_image, arr_qbittorrent_image] + (arr_apps | map(attribute='image') | list) }}"

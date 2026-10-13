@@ -1,0 +1,36 @@
+---
+# The downloader's namespace (arr_vpn_namespace) is set in group_vars/all/arr.yml.
+arr_manifest_dir: "{{ k8s_app_manifest_dir }}"
+arr_pull_images: true # pre-pull the images on the workers (a wrong tag shows up before anything is changed)
+arr_crictl: /var/lib/rancher/rke2/bin/crictl
+arr_containerd_socket: unix:///run/k3s/containerd/containerd.sock
+arr_rollout_timeout: 600s
+
+# Images. hotio tags are release-<version>; Gluetun's are v<version>.
+arr_gluetun_image: "ghcr.io/qdm12/gluetun:{{ gluetun_version }}"
+arr_qbittorrent_image: "ghcr.io/hotio/qbittorrent:release-{{ qbittorrent_version }}"
+
+# The tunnel. Needs the kernel's tun device on the node (Ubuntu has it). If the Gluetun log says it cannot open /dev/net/tun
+# ("operation not permitted"), the container runtime did not allow the device: set arr_vpn_privileged: true (a privileged
+# container is the well-known fallback; this namespace is already the one place where that is allowed).
+arr_vpn_privileged: false
+arr_vpn_wireguard_key: "{{ vault_nordvpn_wireguard_private_key }}"
+
+# NFS (same shares as the media namespace; separate PersistentVolumes because a volume binds to one claim in one namespace).
+arr_nfs_server_ip: "{{ hostvars[groups['proxmox'][0]].ansible_host }}"
+arr_data_export_path: "{{ hostvars[groups['proxmox'][0]].media_data_path }}"
+arr_staging_export_path: "{{ hostvars[groups['proxmox'][0]].media_staging_path }}"
+arr_data_capacity: 4Ti
+arr_staging_capacity: 1800Gi
+
+# Sizes of the node-local config volumes (SQLite databases, logs, backups the apps make themselves).
+arr_config_size: 2Gi
+arr_qbittorrent_config_size: 1Gi
+
+arr_app_image_repo: ghcr.io/hotio
+# The three apps in `media`.
+arr_apps:
+  - {name: sonarr, image: "{{ arr_app_image_repo }}/sonarr:release-{{ sonarr_version }}", port: 8989, prefix: SONARR, hostname: "{{ sonarr_hostname }}", secret_key: sonarr-api-key, data: true, memory_request: 256Mi, memory_limit: 1536Mi}
+  - {name: radarr, image: "{{ arr_app_image_repo }}/radarr:release-{{ radarr_version }}", port: 7878, prefix: RADARR, hostname: "{{ radarr_hostname }}", secret_key: radarr-api-key, data: true, memory_request: 256Mi, memory_limit: 1536Mi}
+  - {name: prowlarr, image: "{{ arr_app_image_repo }}/prowlarr:release-{{ prowlarr_version }}", port: 9696, prefix: PROWLARR, hostname: "{{ prowlarr_hostname }}", secret_key: prowlarr-api-key, data: false, memory_request: 128Mi, memory_limit: 768Mi}
+arr_ingress_class: "{{ ingress_class_name }}"

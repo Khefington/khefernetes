@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-upgrade-check jellyfin-upgrade jellyfin-upgrade-finish jellyfin-rollback jellyfin-upgrade-cleanup jellyfin-profile-check jellyfin-profile-fix security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-upgrade-check jellyfin-upgrade jellyfin-upgrade-finish jellyfin-rollback jellyfin-upgrade-cleanup jellyfin-profile-check jellyfin-profile-fix arr arr-provision arr-vpn-test arr-backup arr-backup-now arr-restore security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -89,6 +89,18 @@ jellyfin-rollback: ## Undo a failed upgrade from the volume copy:  make jellyfin
 	$(PLAYBOOK) playbooks/apps/jellyfin_rollback.yml -e jellyfin_rollback_version=$(JELLYFIN_OLD)
 jellyfin-upgrade-cleanup: ## Delete the config-volume copies the upgrade left on the node (asks you to type DELETE)
 	$(PLAYBOOK) playbooks/apps/jellyfin_upgrade_cleanup.yml
+arr: ## Download stack: qBittorrent behind NordVPN, Sonarr, Radarr, Prowlarr (needs the vault secrets in docs/runbooks/download-stack.md)
+	$(PLAYBOOK) playbooks/apps/arr.yml
+arr-provision: ## Configure the download stack from Git: sign-in, root folders, download client, Prowlarr links and indexers
+	$(PLAYBOOK) playbooks/apps/arr_provision.yml
+arr-vpn-test: ## READ-ONLY: prove the downloader leaves through NordVPN (public address, no LAN access, tunnel DNS)
+	$(PLAYBOOK) playbooks/apps/arr_vpn_test.yml
+arr-backup: ## Install the nightly backup job for Sonarr, Radarr and Prowlarr
+	$(PLAYBOOK) playbooks/apps/arr_backup.yml
+arr-backup-now: ## Install the arr backup job and run one backup right now
+	$(PLAYBOOK) playbooks/apps/arr_backup.yml -e arr_backup_run_now=true
+arr-restore: ## Restore Sonarr, Radarr and Prowlarr from their newest backup zips (asks you to type RESTORE)
+	$(PLAYBOOK) playbooks/apps/arr_restore.yml
 jellyfin-profile-check: ## READ-ONLY: are users' profile pictures linked? (shows picture files found in the pod)
 	$(PLAYBOOK) playbooks/apps/jellyfin_user_images.yml
 jellyfin-profile-fix: ## Re-attach profile pictures that are on disk but no longer linked to their user

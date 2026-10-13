@@ -1,0 +1,33 @@
+---
+- name: Make sure the Secret with the API keys exists (created by `make arr`)
+  ansible.builtin.command: "{{ kubectl_cmd }} -n {{ media_namespace }} get secret arr-secrets -o name"
+  register: arr_backup_secret
+  changed_when: false
+  failed_when: false
+
+- name: Stop with a helpful message if it is missing
+  ansible.builtin.assert:
+    that: arr_backup_secret.rc == 0
+    quiet: true
+    fail_msg: "The Secret 'arr-secrets' does not exist yet. Run `make arr` first; it creates the Secrets from the vault."
+
+- name: Create the manifest folder
+  ansible.builtin.file:
+    path: "{{ k8s_app_manifest_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the manifest
+  ansible.builtin.template:
+    src: arr-backup.yaml.j2
+    dest: "{{ arr_backup_manifest_path }}"
+    mode: "0644"
+
+- name: Kubectl apply
+  ansible.builtin.command: "{{ kubectl_cmd }} apply -f {{ arr_backup_manifest_path }}"
+  register: arr_backup_apply
+  changed_when: arr_backup_apply.stdout_lines | reject('search', 'unchanged') | list | length > 0
+
+- name: Run one backup right now as a test
+  ansible.builtin.include_tasks: run_now.yml
+  when: arr_backup_run_now | bool

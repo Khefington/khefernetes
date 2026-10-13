@@ -1,0 +1,53 @@
+---
+# How the playbook reaches the apps: through the ingress, exactly like a browser does (Host header picks the app).
+arr_provision_url: "http://{{ ingress_vip }}"
+arr_provision_retries: 60 # waits for each app to answer: 60 x 5 s = 5 minutes
+arr_provision_force: false # -e arr_provision_force=true: also re-send passwords and API keys (changing one in the vault)
+arr_provision_force_save: false # save even if the app's connection test fails (-e arr_provision_force_save=true)
+
+# Where the apps talk to each other INSIDE the cluster (service names, not the LAN names).
+arr_provision_qbittorrent_host: "qbittorrent.{{ arr_vpn_namespace }}.svc.cluster.local"
+arr_provision_qbittorrent_port: 8080
+arr_provision_prowlarr_url: "http://prowlarr:9696"
+
+# The four web pages: host name (for the Host header), API key (from the vault), API version.
+arr_provision_targets:
+  sonarr: {host: "{{ sonarr_hostname }}", key: "{{ vault_sonarr_api_key }}", api: v3}
+  radarr: {host: "{{ radarr_hostname }}", key: "{{ vault_radarr_api_key }}", api: v3}
+  prowlarr: {host: "{{ prowlarr_hostname }}", key: "{{ vault_prowlarr_api_key }}", api: v1}
+
+# qBittorrent refuses a login whose Origin/Referer does not match the Host it was reached by (its CSRF protection), so send all three.
+arr_qb_headers:
+  Host: "{{ qbittorrent_hostname }}"
+  Referer: "http://{{ qbittorrent_hostname }}/"
+  Origin: "http://{{ qbittorrent_hostname }}"
+
+# qBittorrent preferences that this repo sets (names are qBittorrent's own; merged with arr_qbittorrent_preferences).
+arr_qbittorrent_default_preferences:
+  save_path: /data/downloads
+  temp_path_enabled: true # in-progress downloads go to the SSD, finished ones are moved to the HDD
+  temp_path: /incomplete
+  auto_tmm_enabled: true # automatic torrent management: a torrent's category decides its folder
+  torrent_changed_tmm_enabled: true
+  save_path_changed_tmm_enabled: true
+  category_changed_tmm_enabled: true
+  upnp: false # the tunnel has no port forwarding and the router must not be asked for one
+  bypass_local_auth: false
+  bypass_auth_subnet_whitelist_enabled: false
+  web_ui_csrf_protection_enabled: true
+  web_ui_clickjacking_protection_enabled: true
+
+# Settings merged into Sonarr / Radarr (real values in inventories/group_vars/all/arr.yml)
+arr_admin_user: khef
+arr_qbittorrent_categories: {}
+arr_qbittorrent_preferences: {}
+arr_sonarr_root_folders: []
+arr_radarr_root_folders: []
+arr_sonarr_media_management: {}
+arr_radarr_media_management: {}
+arr_prowlarr_indexers: []
+arr_show_indexer_definitions: false
+arr_show_indexer_fields: ""
+
+# How a resource is called in task names ("sonarr/qBittorrent"); app and res_name are set by whoever includes resource.yml.
+arr_provision_label: "{{ app }}/{{ res_name }}"

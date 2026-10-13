@@ -1,0 +1,34 @@
+---
+# Sign-in for one app (Settings > General > Security): forms login, required everywhere, user = arr_admin_user, password from the vault.
+# Needs: app (sonarr | radarr | prowlarr).
+- name: "Read the security settings: {{ app }}"
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/config/host"
+    headers: &arr_headers
+      Host: "{{ arr_provision_targets[app].host }}"
+      X-Api-Key: "{{ arr_provision_targets[app].key }}"
+  register: arr_host
+  changed_when: false
+  no_log: true
+
+- name: "Set sign-in when it differs (or when the password is to be re-sent): {{ app }}"
+  vars:
+    arr_host_wanted: {authenticationMethod: forms, authenticationRequired: enabled, username: "{{ arr_admin_user }}"}
+  ansible.builtin.uri:
+    url: "{{ arr_provision_url }}/api/{{ arr_provision_targets[app].api }}/config/host/{{ arr_host.json.id }}"
+    method: PUT
+    headers: *arr_headers
+    body_format: json
+    body: >-
+      {{ arr_host.json | combine(arr_host_wanted, {'password': vault_arr_password, 'passwordConfirmation': vault_arr_password}) }}
+    status_code: [200, 201, 202]
+  when: ((arr_host.json | arr_dict_diff(arr_host_wanted)) | length > 0) or (arr_provision_force | bool)
+  register: arr_host_put
+  changed_when: true
+  no_log: true
+
+- name: "Wait for it to come back (a change of sign-in can restart it): {{ app }}"
+  ansible.builtin.include_tasks: wait.yml
+  vars:
+    target: {key: "{{ app }}", value: "{{ arr_provision_targets[app] }}"}
+  when: arr_host_put is changed # noqa: no-handler
