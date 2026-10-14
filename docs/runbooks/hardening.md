@@ -15,6 +15,7 @@ Goal: reach Jellyfin from outside the house over a **VPN** (smallest attack surf
 | 2 | Hosts | host firewall (castellan + VMs), automatic security updates on castellan; then by hand: Proxmox two-factor; later: least-privilege API token | firewall + updates written (`make host-firewall`), not applied yet |
 | 3 | Edge | Jellyfin lockout + legacy authorization off (done, `make jellyfin-provision`); TLS at Traefik (deferred, see below) | settings written; TLS deferred |
 | 4 | VPN | WireGuard on castellan (`make wireguard`), devices with `make wireguard-client PEER=...` | written, not applied yet |
+| 5 | Keeping castellan up | restart after a crash/lockup, hardware watchdog, log written to disk often, BIOS settings (`make host-watchdog`) | written (see the end of this file) |
 
 Stages 1 and 2 change how the cluster is built (RKE2 profile and encryption are chosen at install time), so they are applied with the next rebuild.
 
@@ -142,3 +143,26 @@ Notes:
 - The WireGuard apps look the name up each time the tunnel is switched on. After an address change, switch the tunnel off and on once.
 - The updater only reports IPv4 (`curl -4`): the port forward is IPv4. IPv6-only mobile networks still reach an IPv4 address through the carrier's translation.
 - The token is a secret: in the vault, and on castellan only in `/etc/khefernetes/ddns.env` (mode 0600). It is passed to curl on stdin so it does not appear in the process list.
+
+## Stage 5: keeping castellan up (and knowing why it went down)
+**What happened (13 Oct 2026):** castellan stopped at about 02:07 with nothing in its log: no shutdown, no error, no kernel message, and the system disk, the HDD and the NVMe error logs were clean. It stayed dead for 16 hours (until a manual reboot). Because castellan is also the VPN server and the LAN's DNS, the phone on the VPN lost its internet and nothing on the LAN could resolve `*.home.lan`. The memory was running at 2700 MT/s although the modules are rated 2100 MT/s by the firmware (an overclock set by hand after the kit's 3200 XMP rating proved unstable). That is the leading suspect; a power glitch cannot be ruled out.
+
+**By hand, in the BIOS (the repo cannot do these):**
+1. **Memory at its default speed.** Turn XMP/EXPO off and any manual memory clock back to Auto. A kit's printed speed is what the memory can do on a best-case board; the CPU's memory controller (especially with 4 modules) often cannot. Unstable memory freezes a machine with no log, and can quietly corrupt what it writes. After the change run `make host-watchdog`: the memory line must say `[OK]`.
+2. **Power on after power loss:** the BIOS option usually called "Restore on AC Power Loss" / "After G3": set it to *Power On*. Otherwise a short outage leaves castellan off until someone presses the button.
+3. **Memory test:** boot memtest86+ from the Proxmox boot menu and let it finish at least one full pass (several hours; the VMs are down meanwhile). Any error means a module or the memory setting is bad.
+4. If you have a UPS, plug castellan, the router and the ONT into it.
+
+**In the repo:** `make host-watchdog` (read-only report), `make host-watchdog-apply`, `make host-watchdog-off`.
+| Layer | What it does | When it takes effect |
+|---|---|---|
+| Kernel settings | after a panic, an oops or a CPU lockup the machine restarts after 10 seconds instead of sitting dead | immediately |
+| Hardware watchdog | Proxmox's own watchdog service is told to use the chipset's timer (`iTCO_wdt`) instead of the software one; if even the kernel can no longer run, the chipset resets the machine within seconds | **next reboot** of castellan |
+| Log to disk often | the system log is written every 15 seconds instead of every 5 minutes, so the last minutes before a stop are kept | immediately |
+
+Apply is safe to repeat. Before it changes anything for the hardware watchdog it loads the driver once to check it works (a BIOS can lock the timer; then it stops and says so, with the other two layers already in place). Do not stop or restart `watchdog-mux` by hand: Proxmox warns that doing so can reset the machine.
+After the next reboot, `make host-watchdog` should show `[OK] hardware watchdog: watchdog0 iTCO_wdt`.
+**Optional test (it really reboots castellan and every VM, so only when that is fine):** `kill -STOP $(pidof watchdog-mux)`. The timer is no longer fed and the machine resets after about 10 seconds. If it does not, the hardware watchdog is not working: run `make host-watchdog` and send me the output.
+Limits: this restarts castellan after a lockup; it does not prevent one, and it cannot help during a power cut (that is what the BIOS option and a UPS are for). A watchdog restart takes the VMs down with it, so a repeated restart means a real fault to fix, not a feature.
+**Second weakness this showed:** castellan is the only DNS server for the LAN. If it is down, every device on the router loses names. A fallback DNS on the router (a public one as secondary) trades a little privacy for staying online; decide when the host is stable.
+

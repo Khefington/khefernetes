@@ -1,0 +1,19 @@
+---
+# Keeping castellan up, and finding out why when it is not. Three layers, each independent:
+#   1. kernel: after a crash or a CPU lockup, restart after N seconds instead of sitting dead (sysctl)
+#   2. hardware watchdog: if even the kernel cannot run any more, the chipset's timer resets the machine (needs one reboot)
+#   3. evidence: write the system log to disk every few seconds instead of every five minutes
+# `make host-watchdog` only reports. `make host-watchdog-apply` changes things. `make host-watchdog-off` undoes them.
+host_watchdog_apply: false
+host_watchdog_off: false
+host_watchdog_hardware: true # layer 2; false = only layers 1 and 3
+host_watchdog_module: iTCO_wdt # Intel chipsets. Proxmox blocks hardware watchdogs unless named in /etc/default/pve-ha-manager
+host_watchdog_panic_seconds: 10
+host_watchdog_journal_sync: 15s
+
+# Where things live (the tests point these at a scratch folder)
+host_watchdog_sysctl_file: /etc/sysctl.d/90-khefernetes-hang.conf
+host_watchdog_journald_file: /etc/systemd/journald.conf.d/90-khefernetes.conf
+host_watchdog_ha_default_file: /etc/default/pve-ha-manager
+host_watchdog_sysfs: /sys/class/watchdog
+host_watchdog_pstore_dirs: [/sys/fs/pstore, /var/lib/systemd/pstore]

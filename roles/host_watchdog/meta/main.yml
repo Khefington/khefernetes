@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  role_name: host_watchdog
+  author: khefernetes
+  description: "Make the Proxmox host restart itself after a lockup and keep evidence of what happened"
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions: [all]
+  galaxy_tags: []
+dependencies: []

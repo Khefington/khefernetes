@@ -1,0 +1,115 @@
+---
+# Layer 1: restart by itself after a crash or a lockup. The leading "-" makes a key that this kernel does not have a non-error.
+- name: Kernel settings, so a crash or a lockup ends in a restart instead of a dead machine
+  ansible.builtin.copy:
+    dest: "{{ host_watchdog_sysctl_file }}"
+    mode: "0644"
+    content: |
+      # Managed by Ansible (khefernetes, role host_watchdog). Undo: make host-watchdog-off
+      # restart N seconds after a kernel panic (0 = never, the default)
+      kernel.panic = {{ host_watchdog_panic_seconds }}
+      # an oops (a kernel bug that did not kill the whole kernel) is treated as a panic, so it also ends in a restart
+      kernel.panic_on_oops = 1
+      # a CPU stuck inside the kernel for 20+ seconds (soft) or without answering interrupts (hard) becomes a panic
+      -kernel.softlockup_panic = 1
+      -kernel.hardlockup_panic = 1
+  register: host_watchdog_sysctl
+
+- name: Load them now
+  ansible.builtin.command: "sysctl -p {{ host_watchdog_sysctl_file }}"
+  when: host_watchdog_sysctl is changed # noqa: no-handler
+  changed_when: true
+
+# Layer 3: the log is written to disk every few seconds. By default ordinary lines wait up to five minutes in memory, so the
+# last minutes before a freeze are exactly the ones that are lost.
+- name: Folder for the journal setting
+  ansible.builtin.file:
+    path: "{{ host_watchdog_journald_file | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the system log to disk often
+  ansible.builtin.copy:
+    dest: "{{ host_watchdog_journald_file }}"
+    mode: "0644"
+    content: |
+      # Managed by Ansible (khefernetes, role host_watchdog).
+      [Journal]
+      Storage=persistent
+      SyncIntervalSec={{ host_watchdog_journal_sync }}
+  register: host_watchdog_journald
+
+- name: Restart the journal service to pick it up
+  ansible.builtin.command: systemctl restart systemd-journald # noqa: command-instead-of-module
+  when: host_watchdog_journald is changed # noqa: no-handler
+  changed_when: true
+
+# Layer 2: the hardware watchdog.
+- name: Hardware watchdog
+  when: host_watchdog_hardware | bool
+  block:
+    - name: Does this kernel have the driver?
+      ansible.builtin.command: "modinfo -n {{ host_watchdog_module }}"
+      register: host_watchdog_modinfo
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if it does not
+      ansible.builtin.assert:
+        that: host_watchdog_modinfo.rc == 0
+        quiet: true
+        fail_msg: >-
+          This kernel has no {{ host_watchdog_module }} driver. Layers 1 and 3 are in place; for the hardware watchdog find out which one your
+          board has (`lspci | grep -i lpc`, and the Proxmox forum thread "Watchdog will not trigger on Intel System"), or run with
+          -e host_watchdog_hardware=false.
+
+    - name: "Try the driver now (harmless, it only registers a device; nothing is armed until something opens it)"
+      ansible.builtin.command: "modprobe {{ host_watchdog_module }}"
+      register: host_watchdog_probe
+      changed_when: false
+      failed_when: false
+
+    - name: What did the driver say?
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "devices: $(for d in {{ host_watchdog_sysfs }}/*; do [ -d "$d" ] && printf '%s=%s ' "$(basename "$d")" "$(cat "$d/identity" 2>/dev/null)"; done)"
+        dmesg 2>/dev/null | grep -iE '{{ host_watchdog_module }}' | tail -8 || true
+      args:
+        executable: /bin/bash
+      register: host_watchdog_says
+      changed_when: false
+
+    - name: Put the driver away again (it is loaded for real at the next boot)
+      ansible.builtin.command: "modprobe -r {{ host_watchdog_module }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Stop if the board or the BIOS has switched the watchdog off
+      ansible.builtin.assert:
+        that:
+          - host_watchdog_probe.rc == 0
+          - host_watchdog_says.stdout is search(host_watchdog_module)
+          - host_watchdog_says.stdout is not search('disabled by hardware|unable to reset NO_REBOOT')
+        quiet: true
+        fail_msg: |-
+          The {{ host_watchdog_module }} watchdog cannot be used on this machine:
+          {{ host_watchdog_says.stdout }} {{ host_watchdog_probe.stderr | default('') }}
+          The BIOS has locked it ("no reboot" flag). Look in the BIOS for a watchdog / TCO / "Intel ME" timer option and enable it, then run this again.
+          Layers 1 and 3 are already in place. Or use -e host_watchdog_hardware=false.
+
+    - name: Tell Proxmox's watchdog service to use it from the next boot
+      ansible.builtin.lineinfile:
+        path: "{{ host_watchdog_ha_default_file }}"
+        regexp: '^#?\s*WATCHDOG_MODULE='
+        line: "WATCHDOG_MODULE={{ host_watchdog_module }}"
+        create: true
+        mode: "0644"
+        backup: true
+      register: host_watchdog_ha
+
+    - name: A reboot is needed for the hardware watchdog
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Set. ' if host_watchdog_ha is changed else 'Already set. ' }}The hardware watchdog takes over at the NEXT reboot of castellan (the
+          VMs go down with it, so pick a moment; Proxmox's watchdog service holds the device and must not be restarted by hand).
+          Afterwards run `make host-watchdog` and look for "[OK] hardware watchdog".

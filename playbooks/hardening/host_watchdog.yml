@@ -1,0 +1,12 @@
+---
+# Keep castellan up, and keep evidence when it is not. Protects against the failure where the host stops dead and nothing says why.
+#   make host-watchdog            read-only report: watchdog devices, restart-after-crash settings, memory speed, crash records
+#   make host-watchdog-apply      restart after a crash or lockup, write the log to disk every few seconds, switch Proxmox to the
+#                                 chipset's hardware watchdog (that part takes effect at the next reboot of castellan)
+#   make host-watchdog-off        undo all of it
+# Not covered here (BIOS, by hand): "power on after AC power loss", memory at its rated speed. See docs/runbooks/hardening.md, stage 5.
+- name: Watchdog and crash evidence on castellan
+  hosts: proxmox
+  gather_facts: false
+  roles:
+    - host_watchdog

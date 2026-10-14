@@ -1,0 +1,11 @@
+---
+- name: Undo everything this role did
+  ansible.builtin.include_tasks: off.yml
+  when: host_watchdog_off | bool
+
+- name: Apply
+  ansible.builtin.include_tasks: apply.yml
+  when: host_watchdog_apply | bool and not (host_watchdog_off | bool)
+
+- name: Report what is in place now
+  ansible.builtin.include_tasks: report.yml

@@ -10,7 +10,7 @@ VENV     := .venv
 .DEFAULT_GOAL := help
 .PHONY: help setup lint yamllint jinja ansible-lint syntax ping site proxmox-api \
         proxmox-template gpu-discover gpu-host gpu-guest-discover gpu-guest gpu-plugin dns vms destroy-vms nfs rke2 etcd-backup etcd-backup-now networking k8s-storage jellyfin jellyfin-provision jellyfin-backup backup-now \
-        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-upgrade-check jellyfin-upgrade jellyfin-upgrade-finish jellyfin-rollback jellyfin-upgrade-cleanup jellyfin-profile-check jellyfin-profile-fix arr arr-provision arr-vpn-test arr-backup arr-backup-now arr-restore security-audit host-firewall host-firewall-apply host-firewall-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
+        audit-media import-media flatten-media diagnose-jellyfin jellyfin-gpu-test jellyfin-transcode-check jellyfin-restore jellyfin-upgrade-check jellyfin-upgrade jellyfin-upgrade-finish jellyfin-rollback jellyfin-upgrade-cleanup jellyfin-profile-check jellyfin-profile-fix arr arr-provision arr-vpn-test arr-backup arr-backup-now arr-restore security-audit host-firewall host-firewall-apply host-firewall-off host-watchdog host-watchdog-apply host-watchdog-off cluster-hardening cluster-hardening-apply cluster-hardening-off wireguard wireguard-client wireguard-off ddns ddns-status rebuild
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -111,6 +111,12 @@ host-firewall-apply: ## Hardening: apply the host firewall + castellan's automat
 	$(PLAYBOOK) playbooks/hardening/hosts.yml -e host_firewall_apply=true
 host-firewall-off: ## Emergency: stop the host firewall on castellan and every VM
 	ansible proxmox:anvil_cluster -b -m ansible.builtin.systemd -a "name=khef-firewall state=stopped enabled=false"
+host-watchdog: ## READ-ONLY: is castellan set to restart itself after a lockup? (watchdog devices, crash settings, memory speed, crash records)
+	$(PLAYBOOK) playbooks/hardening/host_watchdog.yml
+host-watchdog-apply: ## Make castellan restart itself after a crash/lockup and log to disk often (hardware watchdog active after the next reboot)
+	$(PLAYBOOK) playbooks/hardening/host_watchdog.yml -e host_watchdog_apply=true
+host-watchdog-off: ## Undo host-watchdog-apply
+	$(PLAYBOOK) playbooks/hardening/host_watchdog.yml -e host_watchdog_off=true
 cluster-hardening: ## Hardening: pod-security labels + media NetworkPolicies, plan only (API server dry run)
 	$(PLAYBOOK) playbooks/hardening/cluster.yml
 cluster-hardening-apply: ## Hardening: apply them, probe the result, roll the policies back automatically if something critical breaks

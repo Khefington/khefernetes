@@ -16,7 +16,7 @@ arr_provision_targets:
   radarr: {host: "{{ radarr_hostname }}", key: "{{ vault_radarr_api_key }}", api: v3}
   prowlarr: {host: "{{ prowlarr_hostname }}", key: "{{ vault_prowlarr_api_key }}", api: v1}
 
-# qBittorrent refuses a login whose Origin/Referer does not match the Host it was reached by (its CSRF protection), so send all three.
+# qBittorrent refuses a request whose Origin/Referer does not match the Host it was reached by (its CSRF protection), so send all three.
 arr_qb_headers:
   Host: "{{ qbittorrent_hostname }}"
   Referer: "http://{{ qbittorrent_hostname }}/"

@@ -1,0 +1,89 @@
+---
+- name: Watchdog devices the kernel has
+  ansible.builtin.shell: |
+    set -o pipefail
+    for d in {{ host_watchdog_sysfs }}/*; do
+      [ -d "$d" ] || continue
+      echo "$(basename "$d") $(cat "$d/identity" 2>/dev/null | tr ' ' '_') $(cat "$d/state" 2>/dev/null)"
+    done
+  args:
+    executable: /bin/bash
+  register: host_watchdog_devs
+  changed_when: false
+  check_mode: false
+
+- name: What Proxmox is told to use
+  ansible.builtin.command: "grep -E '^WATCHDOG_MODULE=' {{ host_watchdog_ha_default_file }}"
+  register: host_watchdog_cfg
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Kernel settings in force
+  ansible.builtin.shell: |
+    for k in kernel.panic kernel.panic_on_oops kernel.softlockup_panic kernel.hardlockup_panic; do
+      echo "$k=$(sysctl -n $k 2>/dev/null || echo n/a)"
+    done
+  args:
+    executable: /bin/bash
+  register: host_watchdog_sysctls
+  changed_when: false
+  check_mode: false
+
+- name: Memory speeds the firmware reports
+  ansible.builtin.command: dmidecode -t memory
+  register: host_watchdog_dmi
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Crash records left by an earlier crash
+  ansible.builtin.shell: |
+    set -o pipefail
+    for d in {{ host_watchdog_pstore_dirs | join(' ') }}; do [ -d "$d" ] && ls -A "$d" 2>/dev/null | sed "s#^#$d/#"; done; true
+  args:
+    executable: /bin/bash
+  register: host_watchdog_pstore
+  changed_when: false
+  check_mode: false
+
+- name: Work out the answers
+  vars:
+    host_watchdog_x_devs: "{{ host_watchdog_devs.stdout_lines | map('split', ' ') | list }}"
+    host_watchdog_x_hw: "{{ host_watchdog_x_devs | rejectattr(1, 'search', 'softdog') | list }}"
+    host_watchdog_x_speeds: "{{ host_watchdog_dmi.stdout | default('') | regex_findall('(?m)^\\s*Speed:\\s*(\\d+)\\s*MT/s') | map('int') | list }}"
+    host_watchdog_x_conf: "{{ host_watchdog_dmi.stdout | default('') | regex_findall('(?m)^\\s*Configured Memory Speed:\\s*(\\d+)\\s*MT/s') | map('int') | list }}"
+  ansible.builtin.set_fact:
+    host_watchdog_hw_devices: "{{ host_watchdog_x_hw }}"
+    host_watchdog_rated: "{{ host_watchdog_x_speeds | max | default(0) if host_watchdog_x_speeds | length > 0 else 0 }}"
+    host_watchdog_configured: "{{ host_watchdog_x_conf | max | default(0) if host_watchdog_x_conf | length > 0 else 0 }}"
+    host_watchdog_sys: "{{ dict(host_watchdog_sysctls.stdout_lines | map('split', '=') | list) }}"
+
+- name: The report
+  vars:
+    host_watchdog_x_hw_ok: "{{ host_watchdog_hw_devices | length > 0 }}"
+    host_watchdog_x_cfg_set: "{{ host_watchdog_cfg.rc == 0 }}"
+    host_watchdog_x_k_ok: "{{ host_watchdog_sys['kernel.panic'] | default('0') | int > 0 and host_watchdog_sys['kernel.panic_on_oops'] | default('0') == '1' }}"
+    host_watchdog_x_mem_bad: "{{ host_watchdog_configured | int > host_watchdog_rated | int > 0 }}"
+  ansible.builtin.debug:
+    msg:
+      - >-
+        {{ '[OK]   hardware watchdog: ' ~ (host_watchdog_hw_devices | map('join', ' ') | join('; '))
+           if host_watchdog_x_hw_ok else
+           ('[WARN] hardware watchdog: configured for the next boot (' ~ host_watchdog_cfg.stdout ~ '); reboot castellan to activate it'
+            if host_watchdog_x_cfg_set else
+            '[WARN] no hardware watchdog: only the software one (' ~ (host_watchdog_devs.stdout_lines | join('; ') or 'none') ~ '), which cannot catch a total lockup. make host-watchdog-apply, then reboot') }}
+      - >-
+        {{ '[OK]   the kernel restarts the machine ' ~ host_watchdog_sys['kernel.panic'] ~ ' s after a crash (panic_on_oops=' ~ host_watchdog_sys['kernel.panic_on_oops'] ~
+           ', softlockup=' ~ host_watchdog_sys['kernel.softlockup_panic'] ~ ', hardlockup=' ~ host_watchdog_sys['kernel.hardlockup_panic'] ~ ')'
+           if host_watchdog_x_k_ok else
+           '[WARN] after a crash the machine stays dead (kernel.panic=' ~ host_watchdog_sys['kernel.panic'] | default('?') ~ '). make host-watchdog-apply' }}
+      - >-
+        {{ '[WARN] memory runs at ' ~ host_watchdog_configured ~ ' MT/s but the modules are rated ' ~ host_watchdog_rated ~
+           ' MT/s (XMP or an overclocked profile). An unstable memory setting is a classic cause of freezes that leave no trace. Set the memory to its rated speed in the BIOS.'
+           if host_watchdog_x_mem_bad else
+           ('[OK]   memory runs at ' ~ host_watchdog_configured ~ ' MT/s (rated ' ~ host_watchdog_rated ~ ')' if host_watchdog_rated | int > 0 else '[INFO] could not read the memory speeds (dmidecode)') }}
+      - >-
+        {{ '[INFO] crash records from an earlier crash: ' ~ (host_watchdog_pstore.stdout_lines | join(', '))
+           if host_watchdog_pstore.stdout_lines | length > 0 else
+           '[INFO] no crash records (nothing was written by the kernel before the last stop, or there has been no kernel crash)' }}
