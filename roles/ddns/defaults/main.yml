@@ -1,9 +1,9 @@
 ---
-# Dynamic DNS: a name like khef-home.duckdns.org that always points at your home's current public IP address,
+# Dynamic DNS: a name like khefernetes.duckdns.org that always points at your home's current public IP address,
 # so the VPN endpoint on your phone keeps working when Google Fiber changes the address.
 # The real values are in inventories/group_vars/all/ddns.yml; the token is in the vault (vault_duckdns_token).
 ddns_enabled: true
-ddns_duckdns_subdomain: "" # just the first part: for khef-home.duckdns.org write khef-home
+ddns_duckdns_subdomain: "khefernetes" # just the first part: for khefernetes.duckdns.org write khefernetes
 ddns_duckdns_token: "{{ vault_duckdns_token | default('') }}"
 ddns_interval_minutes: 5
 

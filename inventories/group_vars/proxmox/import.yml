@@ -9,4 +9,5 @@ media_transfers:
   - { src: "/mnt/c/Users/konno/Videos/Movies", library: movies }
   - { src: "/mnt/c/Users/konno/Videos/TV", library: tv }
   - { src: "/mnt/c/Users/konno/Videos/Books", library: books }
-  # - { src: "/mnt/d/Music", library: music }
+  - { src: "/mnt/c/Users/konno/Videos/Audiobooks", library: audiobooks }
+  - { src: "/mnt/d/Music", library: music }

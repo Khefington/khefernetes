@@ -132,11 +132,11 @@ Mechanically: the firewall's `forward` chain only looks at traffic from or to `w
 
 ### A home address that changes: DuckDNS
 Your phone's file names where to connect. A name that always points at your current home address keeps it working when Google Fiber changes the address.
-**By hand, once:** sign in at <https://www.duckdns.org> (it uses a Google/GitHub/etc. login), create a name (for example `khef-home`), and copy the token from the top of the page.
+**By hand, once:** sign in at <https://www.duckdns.org> (it uses a Google/GitHub/etc. login), create a name (for example `khefernetes`), and copy the token from the top of the page.
 1. `ansible-vault edit inventories/group_vars/all/vault.yml` and add `vault_duckdns_token: "<the token>"`.
-2. In `inventories/group_vars/all/ddns.yml` set `ddns_duckdns_subdomain: khef-home` (just the first part).
-3. `make ddns`. It puts the token in a root-only file on castellan, installs a systemd timer that tells DuckDNS your current IPv4 address every 5 minutes (and 2 minutes after a boot), updates once right away and checks that `khef-home.duckdns.org` now resolves to that address.
-4. `wireguard_endpoint` becomes `khef-home.duckdns.org` by itself. A phone you already set up: open the tunnel in the WireGuard app > Edit > Peer > Endpoint > `khef-home.duckdns.org:51820` (or re-issue it with `make wireguard-client PEER=phone`).
+2. In `inventories/group_vars/all/ddns.yml` set `ddns_duckdns_subdomain: khefernetes` (just the first part).
+3. `make ddns`. It puts the token in a root-only file on castellan, installs a systemd timer that tells DuckDNS your current IPv4 address every 5 minutes (and 2 minutes after a boot), updates once right away and checks that `khefernetes.duckdns.org` now resolves to that address.
+4. `wireguard_endpoint` becomes `khefernetes.duckdns.org` by itself. A phone you already set up: open the tunnel in the WireGuard app > Edit > Peer > Endpoint > `khefernetes.duckdns.org:51820` (or re-issue it with `make wireguard-client PEER=phone`).
 `make ddns-status` shows the last updates. Wrong token or name: the update fails with a clear message in that log (`DuckDNS refused the update`).
 Notes:
 - The name publishes your home IP address in DNS. Anything you connect to already sees that address, and the only thing listening there is the silent WireGuard port, so this adds little. Do not point DuckDNS at services you have not hardened.
